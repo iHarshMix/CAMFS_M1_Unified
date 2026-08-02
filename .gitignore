@@ -1,0 +1,83 @@
+# Python bytecode and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+venv*/
+env/
+env*/
+ENV/
+
+# Pytest / Coverage / Linting caches
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+.cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints
+
+# Datasets and raw archive files (NEVER commit raw data or zips)
+dataset/
+*.zip
+*.tar
+*.gz
+*.tar.gz
+*.tgz
+*.rar
+*.7z
+*.nii
+*.nii.gz
+
+# Preprocessed cache arrays and model weights
+outputs/
+*.npy
+*.npz
+*.pt
+*.pth
+*.bin
+*.onnx
+*.safetensors
+*.ckpt
+*.h5
+*.hdf5
+*.pkl
+*.pickle
+
+# Logs and runtime artifacts
+*.log
+*.sqlite3
+
+# IDEs, Editors, and OS System Files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
