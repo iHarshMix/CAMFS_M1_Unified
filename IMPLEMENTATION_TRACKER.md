@@ -108,83 +108,83 @@
 
 ### Phase 5 — Governance, Policy & Provenance *(Spec §5.3, §5.6, §14.4, Code Standards §8)*
 
-- [ ] Create `configs/policy_M1_PRIMARY_V1.json` matching §5.3 tables exactly
-  - [ ] Encoder cohorts: κ_T1 (H1,H2,H3), κ_T1ce (H1), κ_T2 (H1,H2), κ_FLAIR (H1,H3)
-  - [ ] Track cohorts: S1 (H1), S2 (H2), S3 (H3+H1 masked), S4 (H4 delayed)
-  - [ ] R_send, R_recv, R_send^track, R_recv^track, R_contribute matrices
-  - [ ] H4 delayed read-only rules; H2 private T1ce copy rules
-- [ ] Create `src/governance/__init__.py`
-- [ ] Implement `src/governance/policy.py` (§5.3)
-  - [ ] Policy manifest loader and SHA-256 digest computation
-  - [ ] Consent cohort compiler from pairwise policies
-  - [ ] Cohort closure verification: Closed(m, κ) rule
-  - [ ] Track receive safety rule: S ⊆ O(i) AND i accepts every contributor
-  - [ ] Send-gated track routing (§9)
-- [ ] Implement `src/governance/ledger.py` (§5.6)
-  - [ ] Append-only SHA-256 chained JSONL provenance log
-  - [ ] Canonical JSON with stable key order and compact separators
-  - [ ] record_hash = SHA256(record with record_hash field omitted)
-  - [ ] prev_hash = preceding record_hash; chain: h_k = SHA256(h_{k-1} ‖ CanonicalJSON(r_k))
-  - [ ] Event types: POLICY_MANIFEST, PHASE1_AGGREGATION, PHASE_TRANSITION, TRACK_CREATION, CHECKPOINT_SELECTED
-- [ ] Implement `src/governance/lineage_audit.py` (§14.4)
-  - [ ] Packet-level `image_lineage` set tracking
-  - [ ] Encoder lineage rule: ImageLineage(θ_E_m) ⊆ {m}
-  - [ ] Track lineage rule: ImageLineage(θ_F_S) ∪ ImageLineage(θ_D_S) ⊆ S
-  - [ ] CAMFS mode: reject before deserialization
-  - [ ] B3 shadow mode: log violations but do not alter routing
-- [ ] Write and pass `tests/test_policy.py`
-  - [ ] Policy compiler accepts all listed primary routes (including H1 masked → S3)
-  - [ ] Policy rejects: H3 receiving T1ce, H2 contributing T1ce, H4 pre-freeze contribution
-- [ ] Write and pass `tests/test_lineage.py`
-  - [ ] Lineage audit catches synthetically injected forbidden-modality packet
+- [x] Create `configs/policy_M1_PRIMARY_V1.json` matching §5.3 tables exactly
+  - [x] Encoder cohorts: κ_T1 (H1,H2,H3), κ_T1ce (H1), κ_T2 (H1,H2), κ_FLAIR (H1,H3)
+  - [x] Track cohorts: S1 (H1), S2 (H2), S3 (H3+H1 masked), S4 (H4 delayed)
+  - [x] R_send, R_recv, R_send^track, R_recv^track, R_contribute matrices
+  - [x] H4 delayed read-only rules; H2 private T1ce copy rules
+- [x] Create `src/governance/__init__.py`
+- [x] Implement `src/governance/policy.py` (§5.3)
+  - [x] Policy manifest loader and SHA-256 digest computation
+  - [x] Consent cohort compiler from pairwise policies
+  - [x] Cohort closure verification: Closed(m, κ) rule
+  - [x] Track receive safety rule: S ⊆ O(i) AND i accepts every contributor
+  - [x] Send-gated track routing (§9)
+- [x] Implement `src/governance/ledger.py` (§5.6)
+  - [x] Append-only SHA-256 chained JSONL provenance log
+  - [x] Canonical JSON with stable key order and compact separators
+  - [x] record_hash = SHA256(record with record_hash field omitted)
+  - [x] prev_hash = preceding record_hash; chain: h_k = SHA256(h_{k-1} ‖ CanonicalJSON(r_k))
+  - [x] Event types: POLICY_MANIFEST, PHASE1_AGGREGATION, PHASE_TRANSITION, TRACK_CREATION, CHECKPOINT_SELECTED
+- [x] Implement `src/governance/lineage_audit.py` (§14.4)
+  - [x] Packet-level `image_lineage` set tracking
+  - [x] Encoder lineage rule: ImageLineage(θ_E_m) ⊆ {m}
+  - [x] Track lineage rule: ImageLineage(θ_F_S) ∪ ImageLineage(θ_D_S) ⊆ S
+  - [x] CAMFS mode: reject before deserialization
+  - [x] B3 shadow mode: log violations but do not alter routing
+- [x] Write and pass `tests/test_policy.py`
+  - [x] Policy compiler accepts all listed primary routes (including H1 masked → S3)
+  - [x] Policy rejects: H3 receiving T1ce, H2 contributing T1ce, H4 pre-freeze contribution
+- [x] Write and pass `tests/test_lineage.py`
+  - [x] Lineage audit catches synthetically injected forbidden-modality packet
 
 ---
 
 ### Phase 6 — Federation Protocol & Phase Controller *(Spec §5.5, §6.2, §7, §8.4–§8.5)*
 
-- [ ] Create `src/federation/__init__.py`
-- [ ] Implement `src/federation/phase_controller.py` (§5.5, §7)
-  - [ ] State machine: PHASE1 → FROZEN → PHASE2 → RELEASED
-  - [ ] Freeze procedure: serialize & hash encoder state
-  - [ ] Set encoders to eval mode, `requires_grad=False`
-  - [ ] Stop-gradient wrapper: z_m = sg(E_m*(x_m))
-  - [ ] Destroy Phase-1 optimizer state and communication route
-  - [ ] Create fresh Phase-2 optimizer (fusion + decoder + fused-prototype params only)
-- [ ] Implement `src/federation/client.py` (§6.2, §8.4)
-  - [ ] Phase 1 local training loop: contrastive InfoNCE on unimodal encoders
-  - [ ] Phase 2 local training loop: Dice+CE + fused-alignment on fusion+decoder
-  - [ ] Round 0 no-optimizer prototype bootstrap (§6.2)
-  - [ ] Fresh local AdamW optimizer each round (no state persists across rounds)
-  - [ ] Post-local prototype recomputation in eval mode, FP32, all 155 slices, no augmentation (§6.2)
-  - [ ] DataLoader with `worker_init_fn=seed_worker` and run-specific generator
-- [ ] Implement `src/federation/server.py` (§6.2, §8.5)
-  - [ ] Phase 1 cohort aggregation: patient-weighted encoder averaging (§6.2)
-  - [ ] Phase 1 prototype aggregation: class-specific patient-support weighted (§6.2)
-  - [ ] Phase 2 track aggregation: send-keyed patient-weighted fusion/decoder averaging (§8.5)
-  - [ ] Phase 2 fused-prototype bootstrap and aggregation (§8.3)
-  - [ ] Track-cohort closure rule enforcement (§8.5)
-  - [ ] Zero-support prototype retention (retain previous if cohort denominator is zero)
-  - [ ] No server optimizer
-- [ ] Implement Phase 1 stopping criterion (§6.3)
-  - [ ] Mean prototype drift computation across all cohorts
-  - [ ] Stop when drift < ε=0.01 for K=5 consecutive rounds after round 20
-  - [ ] Maximum 100 rounds hard cap
-- [ ] Implement Phase 2 model selection and stopping (§8.6)
-  - [ ] Highest contributor-patient-weighted validation macro Dice
-  - [ ] Improvement threshold 1e-4, earliest exact tie
-  - [ ] Stop after 10 rounds without improvement after round 20
-  - [ ] Maximum 100 rounds hard cap
-- [ ] Write and pass `tests/test_freeze.py`
-  - [ ] After freeze: all encoder params `.requires_grad == False`
-  - [ ] Encoder is in eval mode
-  - [ ] Encoder outputs are detached (stop-gradient)
-  - [ ] Phase-2 optimizer step cannot alter encoder parameters
-- [ ] Write and pass `tests/test_protocol.py`
-  - [ ] Round 0 has no optimizer step (bootstrap only)
-  - [ ] Aggregation uses registered patient/support weights
-  - [ ] No client/server optimizer state persists across rounds
-- [ ] Write and pass `tests/test_determinism.py`
-  - [ ] Two same-device replays with same seed produce identical Phase-1 round-1 loss and state hash
+- [x] Create `src/federation/__init__.py`
+- [x] Implement `src/federation/phase_controller.py` (§5.5, §7)
+  - [x] State machine: PHASE1 → FROZEN → PHASE2 → RELEASED
+  - [x] Freeze procedure: serialize & hash encoder state
+  - [x] Set encoders to eval mode, `requires_grad=False`
+  - [x] Stop-gradient wrapper: z_m = sg(E_m*(x_m))
+  - [x] Destroy Phase-1 optimizer state and communication route
+  - [x] Create fresh Phase-2 optimizer (fusion + decoder + fused-prototype params only)
+- [x] Implement `src/federation/client.py` (§6.2, §8.4)
+  - [x] Phase 1 local training loop: contrastive InfoNCE on unimodal encoders
+  - [x] Phase 2 local training loop: Dice+CE + fused-alignment on fusion+decoder
+  - [x] Round 0 no-optimizer prototype bootstrap (§6.2)
+  - [x] Fresh local AdamW optimizer each round (no state persists across rounds)
+  - [x] Post-local prototype recomputation in eval mode, FP32, all 155 slices, no augmentation (§6.2)
+  - [x] DataLoader with `worker_init_fn=seed_worker` and run-specific generator
+- [x] Implement `src/federation/server.py` (§6.2, §8.5)
+  - [x] Phase 1 cohort aggregation: patient-weighted encoder averaging (§6.2)
+  - [x] Phase 1 prototype aggregation: class-specific patient-support weighted (§6.2)
+  - [x] Phase 2 track aggregation: send-keyed patient-weighted fusion/decoder averaging (§8.5)
+  - [x] Phase 2 fused-prototype bootstrap and aggregation (§8.3)
+  - [x] Track-cohort closure rule enforcement (§8.5)
+  - [x] Zero-support prototype retention (retain previous if cohort denominator is zero)
+  - [x] No server optimizer
+- [x] Implement Phase 1 stopping criterion (§6.3)
+  - [x] Mean prototype drift computation across all cohorts
+  - [x] Stop when drift < ε=0.01 for K=5 consecutive rounds after round 20
+  - [x] Maximum 100 rounds hard cap
+- [x] Implement Phase 2 model selection and stopping (§8.6)
+  - [x] Highest contributor-patient-weighted validation macro Dice
+  - [x] Improvement threshold 1e-4, earliest exact tie
+  - [x] Stop after 10 rounds without improvement after round 20
+  - [x] Maximum 100 rounds hard cap
+- [x] Write and pass `tests/test_freeze.py`
+  - [x] After freeze: all encoder params `.requires_grad == False`
+  - [x] Encoder is in eval mode
+  - [x] Encoder outputs are detached (stop-gradient)
+  - [x] Phase-2 optimizer step cannot alter encoder parameters
+- [x] Write and pass `tests/test_protocol.py`
+  - [x] Round 0 has no optimizer step (bootstrap only)
+  - [x] Aggregation uses registered patient/support weights
+  - [x] No client/server optimizer state persists across rounds
+- [x] Write and pass `tests/test_determinism.py`
+  - [x] Two same-device replays with same seed produce identical Phase-1 round-1 loss and state hash
 
 ---
 
@@ -292,8 +292,8 @@
 | **2** | Dataset Preprocessing Pipeline | ✅ **COMPLETE** |
 | **3** | Neural Network Architectures | ✅ **COMPLETE** |
 | **4** | Loss Functions & 3D Evaluation | ✅ **COMPLETE** |
-| **5** | Governance, Policy & Provenance | ⬜ Pending |
-| **6** | Federation Protocol & Phase Controller | ⬜ Pending |
+| **5** | Governance, Policy & Provenance | ✅ **COMPLETE** |
+| **6** | Federation Protocol & Phase Controller | ✅ **COMPLETE** |
 | **7** | Metrics Logging & Per-Round CSV | ⬜ Pending |
 | **8** | Experiment Runner Scripts & Baselines | ⬜ Pending |
 | **9** | Statistical Analysis & Paper Output | ⬜ Pending |
@@ -339,3 +339,22 @@
   - Implemented `MaskedInfoNCELoss`, `SoftDiceCrossEntropyLoss`, `Phase1Loss`, and `Phase2Loss` in [src/losses.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/losses.py) (§6.1, §8.2, §15.1): $\tau=0.1$ cosine similarity contrastive loss with empty-prototype masking, composite Soft Dice ($\epsilon_D=10^{-5}$, tumor classes $\{1,2,3\}$) + Cross-Entropy loss, Phase 1 objective ($\lambda_1=1.0$), and Phase 2 objective ($\lambda_2=0.1$).
   - Implemented label back-mapping $\{0,1,2,3\} \to \{0,1,2,4\}$, 3D patient-level Dice, 3D HD95 with grid diagonal penalty, and `PatientEvaluator` in [src/metrics.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/metrics.py) (§13.5).
   - Implemented [tests/test_loss.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/tests/test_loss.py) — 6/6 PyTest contrastive, Soft Dice+CE, Phase 1/2 objectives, 3D Dice edge cases, 3D HD95 penalty edge cases, and `PatientEvaluator` volume tests PASSED. All 15 workspace tests PASSED cleanly.
+
+### Log Entry 5 — Phase 5: Governance, Policy & Provenance
+- **Completed:** 2026-08-02
+- **Accomplishments:**
+  - Created primary policy manifest [configs/policy_M1_PRIMARY_V1.json](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/configs/policy_M1_PRIMARY_V1.json) matching §5.3 tables.
+  - Implemented `PolicyManager` in [src/governance/policy.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/governance/policy.py) (§5.3, §9): SHA-256 manifest digest computation, Closed $(m, \kappa)$ cohort verification, Track Receive Safety Rule ($S \subseteq O(i)$ and authorized receiver validation), and Send-Gated Track Routing (§9).
+  - Implemented `ProvenanceLedger` in [src/governance/ledger.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/governance/ledger.py) (§5.6): Append-only SHA-256 chained JSONL provenance log with canonical JSON stringification and cryptographic chain verification.
+  - Implemented `LineageAuditor` in [src/governance/lineage_audit.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/governance/lineage_audit.py) (§14.4): Packet-level image lineage tracking, Encoder Lineage Rule ($\text{ImageLineage}(\theta_{E_m}) \subseteq \{m\}$), Track Lineage Rule ($\text{ImageLineage}(\theta_{F_S} \cup \theta_{D_S}) \subseteq S$), and support for CAMFS `"reject"` and DisentAFL `"shadow"` modes.
+  - Implemented package exporter [src/governance/__init__.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/governance/__init__.py).
+  - Implemented [tests/test_policy.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/tests/test_policy.py) and [tests/test_lineage.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/tests/test_lineage.py) — 8/8 governance PyTest tests PASSED. All 23 workspace tests PASSED cleanly.
+
+### Log Entry 6 — Phase 6: Federation Protocol & Phase Controller
+- **Completed:** 2026-08-02
+- **Accomplishments:**
+  - Implemented `PhaseController` in [src/federation/phase_controller.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/federation/phase_controller.py) (§5.5, §6.3, §7, §8.6): Lifecycle state machine (`PHASE1` $\to$ `FROZEN` $\to$ `PHASE2` $\to$ `RELEASED`), Phase 1 prototype drift tracking ($\epsilon=0.01$, patience $K=5$), phase transition freeze procedure (`eval()` mode, `requires_grad=False`, SHA-256 encoder parameter hashing), and Phase 2 validation early stopping & model selection.
+  - Implemented `FederatedClient` in [src/federation/client.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/federation/client.py) (§6.2, §8.4): Round 0 no-optimizer prototype bootstrap, Phase 1 local unimodal contrastive training loop (fresh AdamW optimizer, $3 \times 10^{-4}$ LR), Phase 2 track-isolated fusion training loop with frozen encoders (fresh AdamW optimizer, $1 \times 10^{-3}$ LR), post-local prototype recomputation pass over all 155 slices in FP32 eval mode, and update packet governance lineage tracking.
+  - Implemented `FederatedServer` in [src/federation/server.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/federation/server.py) (§6.2, §8.5): Integrated governance audit (`PolicyManager`, `ProvenanceLedger`, `LineageAuditor`), Phase 1 cohort patient-weighted parameter averaging and support-weighted prototype aggregation, Phase 2 track-isolated fusion/decoder parameter averaging, zero-support prototype retention, and no server optimizer.
+  - Implemented package exporter [src/federation/__init__.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/federation/__init__.py).
+  - Implemented unit test suite: [tests/test_freeze.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/tests/test_freeze.py), [tests/test_protocol.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/tests/test_protocol.py), and [tests/test_determinism.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/tests/test_determinism.py) — 5/5 Phase 6 PyTest tests PASSED. All 28 workspace tests PASSED cleanly.

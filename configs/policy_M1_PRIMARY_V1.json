@@ -1,0 +1,61 @@
+{
+  "policy_version": "M1_PRIMARY_V1",
+  "modalities": ["T1", "T1ce", "T2", "FLAIR"],
+  "hospitals": ["H1", "H2", "H3", "H4"],
+  "ownership": {
+    "H1": ["T1", "T1ce", "T2", "FLAIR"],
+    "H2": ["T1", "T1ce", "T2"],
+    "H3": ["T1", "FLAIR"],
+    "H4": ["T1", "T1ce", "T2"]
+  },
+  "send_subsets": {
+    "H1": ["T1", "T1ce", "T2", "FLAIR"],
+    "H2": ["T1", "T2"],
+    "H3": ["T1", "FLAIR"],
+    "H4": ["T1", "T1ce", "T2"]
+  },
+  "encoder_cohorts": {
+    "T1": ["H1", "H2", "H3"],
+    "T1ce": ["H1"],
+    "T2": ["H1", "H2"],
+    "FLAIR": ["H1", "H3"]
+  },
+  "delayed_read_only_recipients": {
+    "T1": ["H4"],
+    "T1ce": ["H4"],
+    "T2": ["H4"],
+    "FLAIR": []
+  },
+  "private_local_copies": {
+    "H2": ["T1ce"]
+  },
+  "track_cohorts": {
+    "S1": {
+      "modalities": ["T1", "T1ce", "T2", "FLAIR"],
+      "contributors": ["H1"],
+      "authorized_receivers": ["H1"]
+    },
+    "S2": {
+      "modalities": ["T1", "T2"],
+      "contributors": ["H2"],
+      "authorized_receivers": ["H2"]
+    },
+    "S3": {
+      "modalities": ["T1", "FLAIR"],
+      "contributors": ["H3", "H1"],
+      "authorized_receivers": ["H3"]
+    },
+    "S4": {
+      "modalities": ["T1", "T1ce", "T2"],
+      "contributors": ["H4"],
+      "authorized_receivers": ["H4"]
+    }
+  },
+  "multi_track_contribution": {
+    "R_contribute": {
+      "H1": {
+        "S3": 1
+      }
+    }
+  }
+}
