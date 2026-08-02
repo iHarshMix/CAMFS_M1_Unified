@@ -85,24 +85,24 @@
 
 ### Phase 4 — Loss Functions & 3D Evaluation *(Spec §6.1, §8.2, §13.5, §15.1)*
 
-- [ ] Implement `src/losses.py`
-  - [ ] Masked InfoNCE contrastive loss with cosine similarity and τ=0.1 (§6.1)
-  - [ ] Empty-prototype masking from denominator (§6.1)
-  - [ ] Dice + Cross-Entropy segmentation loss matching exact §15.1 formula
-  - [ ] Dice smoothing ε_D = 1e-5, tumour classes {1,2,3}
-  - [ ] Phase 1 objective: λ₁ · Σ_m L_uni(z_m) (§6.1)
-  - [ ] Phase 2 objective: L_Dice+CE + λ₂ · L_fused-align (§8.2)
-- [ ] Implement `src/metrics.py`
-  - [ ] 3D patient-level Dice for regions WT={1,2,4}, TC={1,4}, ET={4} (§13.5)
-  - [ ] Both-empty=1, one-empty=0 Dice convention
-  - [ ] 3D HD95 surface distance in physical mm (§13.5)
-  - [ ] Both-empty HD95=0, one-empty HD95=grid diagonal penalty
-  - [ ] One-empty case counting
-  - [ ] Label back-mapping: model {0,1,2,3} → BraTS {0,1,2,4}
-  - [ ] FP32 inference logits, argmax with lowest-class-index tie-breaking
-- [ ] Write and pass `tests/test_loss.py`
-  - [ ] InfoNCE with empty-prototype masking produces valid gradients
-  - [ ] Dice+CE matches exact §15.1 formula
+- [x] Implement `src/losses.py`
+  - [x] Masked InfoNCE contrastive loss with cosine similarity and τ=0.1 (§6.1)
+  - [x] Empty-prototype masking from denominator (§6.1)
+  - [x] Dice + Cross-Entropy segmentation loss matching exact §15.1 formula
+  - [x] Dice smoothing ε_D = 1e-5, tumour classes {1,2,3}
+  - [x] Phase 1 objective: λ₁ · Σ_m L_uni(z_m) (§6.1)
+  - [x] Phase 2 objective: L_Dice+CE + λ₂ · L_fused-align (§8.2)
+- [x] Implement `src/metrics.py`
+  - [x] 3D patient-level Dice for regions WT={1,2,4}, TC={1,4}, ET={4} (§13.5)
+  - [x] Both-empty=1, one-empty=0 Dice convention
+  - [x] 3D HD95 surface distance in physical mm (§13.5)
+  - [x] Both-empty HD95=0, one-empty HD95=grid diagonal penalty
+  - [x] One-empty case counting
+  - [x] Label back-mapping: model {0,1,2,3} → BraTS {0,1,2,4}
+  - [x] FP32 inference logits, argmax with lowest-class-index tie-breaking
+- [x] Write and pass `tests/test_loss.py`
+  - [x] InfoNCE with empty-prototype masking produces valid gradients
+  - [x] Dice+CE matches exact §15.1 formula
 
 ---
 
@@ -291,7 +291,7 @@
 | **1** | Environment & Infrastructure | ✅ **COMPLETE** |
 | **2** | Dataset Preprocessing Pipeline | ✅ **COMPLETE** |
 | **3** | Neural Network Architectures | ✅ **COMPLETE** |
-| **4** | Loss Functions & 3D Evaluation | ⬜ Pending |
+| **4** | Loss Functions & 3D Evaluation | ✅ **COMPLETE** |
 | **5** | Governance, Policy & Provenance | ⬜ Pending |
 | **6** | Federation Protocol & Phase Controller | ⬜ Pending |
 | **7** | Metrics Logging & Per-Round CSV | ⬜ Pending |
@@ -332,3 +332,10 @@
   - Implemented `UNetDecoder` in [src/models/decoder.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/models/decoder.py) (§5.4): Bilinear 2x upsampling (`align_corners=False`), skip connection concatenation across all 4 decoder levels, ConvBlocks, and $1 \times 1$ conv output producing 4 segmentation class logits.
   - Created package exporter [src/models/__init__.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/models/__init__.py).
   - Implemented [tests/test_model_shapes.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/tests/test_model_shapes.py) — 5/5 PyTest shape, prototype, track fusion, end-to-end gradient flow, and Kaiming initialization tests PASSED. All 9 workspace tests PASSED cleanly.
+
+### Log Entry 4 — Phase 4: Loss Functions & 3D Evaluation
+- **Completed:** 2026-08-02
+- **Accomplishments:**
+  - Implemented `MaskedInfoNCELoss`, `SoftDiceCrossEntropyLoss`, `Phase1Loss`, and `Phase2Loss` in [src/losses.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/losses.py) (§6.1, §8.2, §15.1): $\tau=0.1$ cosine similarity contrastive loss with empty-prototype masking, composite Soft Dice ($\epsilon_D=10^{-5}$, tumor classes $\{1,2,3\}$) + Cross-Entropy loss, Phase 1 objective ($\lambda_1=1.0$), and Phase 2 objective ($\lambda_2=0.1$).
+  - Implemented label back-mapping $\{0,1,2,3\} \to \{0,1,2,4\}$, 3D patient-level Dice, 3D HD95 with grid diagonal penalty, and `PatientEvaluator` in [src/metrics.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/metrics.py) (§13.5).
+  - Implemented [tests/test_loss.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/tests/test_loss.py) — 6/6 PyTest contrastive, Soft Dice+CE, Phase 1/2 objectives, 3D Dice edge cases, 3D HD95 penalty edge cases, and `PatientEvaluator` volume tests PASSED. All 15 workspace tests PASSED cleanly.
