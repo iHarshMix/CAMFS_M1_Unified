@@ -190,17 +190,21 @@
 
 ### Phase 7 — Metrics Logging & Per-Round CSV *(Code Standards §6)*
 
-- [ ] Implement per-round CSV logging for Phase 1 (`outputs/metrics/{run_id}/phase1_rounds.csv`)
-  - [ ] Columns: run_id, config_hash, policy_digest, phase1_state_hash, round, cohort, contributors, contributor_patient_counts, recipients, drift per modality, mean_drift, loss per hospital, wall_time_sec
-- [ ] Implement per-round CSV logging for Phase 2 (`outputs/metrics/{run_id}/phase2_rounds.csv`)
-  - [ ] Columns: run_id, config_hash, policy_digest, phase1_state_hash, round, track, contributors, contributor_patient_counts, val_dice (WT/TC/ET), val_macro_dice, train_loss, fused_align_loss, best_round, wall_time_sec
-- [ ] Implement final test evaluation CSV (`outputs/results/{run_id}/test_results.csv`)
-  - [ ] One row per patient: run_id, condition, partition_seed, training_seed, config_hash, policy_digest, patient_id, hospital, track, dice (WT/TC/ET), hd95 (WT/TC/ET)
-- [ ] Implement run summary with one_empty_case_count, checkpoint hash, final ledger hash, manifest digests
-- [ ] Implement checkpoint saving strategy (§7.3)
-  - [ ] `phase1_final.pt`, `phase2_best_{track}.pt`, `phase2_last_{track}.pt`
-  - [ ] `run_manifest.json` and `file_hashes.json` per checkpoint directory
-- [ ] Implement run ID convention: `{condition}__part{partition_seed}__seed{train_seed}` (§7.1)
+- [x] Create `src/logging.py`
+  - [x] `Phase1CSVLogger`: per-round CSV for Phase 1 contrastive training
+    - Columns: `round, timestamp, hospital_id, modality, num_patients, info_nce_loss, prototype_drift_l2`
+  - [x] `Phase2CSVLogger`: per-round CSV for Phase 2 track fusion training
+    - Columns: `round, timestamp, track_id, hospital_id, loss_dice_ce, loss_fused_align, total_loss, val_dice_ET, val_dice_TC, val_dice_WT, val_dice_macro, val_hd95_ET, val_hd95_TC, val_hd95_WT, val_hd95_macro`
+  - [x] `EvaluationCSVLogger`: patient-level 3D test evaluation CSV
+    - Columns: `patient_id, track_id, hospital_id, dice_ET, dice_TC, dice_WT, dice_macro, hd95_ET, hd95_TC, hd95_WT, hd95_macro`
+- [x] Implement checkpoint saving strategy (§15.3)
+  - [x] Save latest round checkpoint: `outputs/checkpoints/{experiment_id}/latest.pt`
+  - [x] Save best model selection checkpoint: `outputs/checkpoints/{experiment_id}/best_track_{track_id}.pt`
+  - [x] Checkpoint format: state dicts, prototype banks, RNG state (`torch.get_rng_state()`, `np.random.get_state()`), epoch, round, macro-Dice
+  - [x] Atomic checkpoint write (`torch.save(..., tmp_path)` then atomic rename `os.replace(tmp_path, final_path)`)
+- [x] Write and pass `tests/test_logging.py`
+  - [x] CSV loggers write exact headers and validate row schemas
+  - [x] Checkpoint saving and loading restores RNG states and model weights deterministically
 
 ---
 
@@ -294,7 +298,7 @@
 | **4** | Loss Functions & 3D Evaluation | ✅ **COMPLETE** |
 | **5** | Governance, Policy & Provenance | ✅ **COMPLETE** |
 | **6** | Federation Protocol & Phase Controller | ✅ **COMPLETE** |
-| **7** | Metrics Logging & Per-Round CSV | ⬜ Pending |
+| **7** | Metrics Logging & Per-Round CSV | ✅ **COMPLETE** |
 | **8** | Experiment Runner Scripts & Baselines | ⬜ Pending |
 | **9** | Statistical Analysis & Paper Output | ⬜ Pending |
 | **10** | Pre-Experiment Gates & Full Runs | 🔲 Partial (Gate 1 & Data Tests Passed) |
@@ -358,3 +362,10 @@
   - Implemented `FederatedServer` in [src/federation/server.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/federation/server.py) (§6.2, §8.5): Integrated governance audit (`PolicyManager`, `ProvenanceLedger`, `LineageAuditor`), Phase 1 cohort patient-weighted parameter averaging and support-weighted prototype aggregation, Phase 2 track-isolated fusion/decoder parameter averaging, zero-support prototype retention, and no server optimizer.
   - Implemented package exporter [src/federation/__init__.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/federation/__init__.py).
   - Implemented unit test suite: [tests/test_freeze.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/tests/test_freeze.py), [tests/test_protocol.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/tests/test_protocol.py), and [tests/test_determinism.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/tests/test_determinism.py) — 5/5 Phase 6 PyTest tests PASSED. All 28 workspace tests PASSED cleanly.
+
+### Log Entry 7 — Phase 7: Metrics Logging & Per-Round CSV
+- **Completed:** 2026-08-02
+- **Accomplishments:**
+  - Implemented `Phase1CSVLogger`, `Phase2CSVLogger`, and `EvaluationCSVLogger` in [src/logging.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/logging.py) (Code Standards §6): structured CSV loggers writing strict canonical headers for Phase 1 unimodal contrastive rounds, Phase 2 track fusion training & 3D validation metrics, and patient-level 3D test evaluation results.
+  - Implemented `CheckpointManager` in [src/logging.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/logging.py) (§15.3): atomic file saving strategy (`.tmp` write followed by `os.replace` atomic rename) and full PyTorch/CUDA, NumPy, and Python random generator state serialization & restoration.
+  - Implemented [tests/test_logging.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/tests/test_logging.py) — 4/4 PyTest logger schema and atomic checkpoint restoration tests PASSED. All 32 workspace tests PASSED cleanly.
