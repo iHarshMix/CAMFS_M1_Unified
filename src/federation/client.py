@@ -84,6 +84,7 @@ class FederatedClient:
     def bootstrap_round0_prototypes(
         self,
         encoders: Dict[str, UnimodalEncoder],
+        max_patients: Optional[int] = None,
     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
         """
         Round 0 No-Optimizer Prototype Bootstrap (§6.2).
@@ -108,7 +109,8 @@ class FederatedClient:
                 all_z = []
                 all_labels = []
 
-                for pid in self.patient_ids:
+                pids = self.patient_ids[:max_patients] if max_patients is not None else self.patient_ids
+                for pid in pids:
                     vol_data = dataset.load_patient_volume(pid)
                     # vol_data['modalities'][m]: (155, 240, 240)
                     # vol_data['labels']: (155, 240, 240)

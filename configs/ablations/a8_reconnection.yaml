@@ -1,0 +1,13 @@
+# configs/ablations/a8_reconnection.yaml
+# Ablation A8: H2 reconnection — private head vs inference-only S4 load
+# Spec §14.3: "Compare (a) H2's private full-owned-set head trained on its 219 training
+#   and 31 validation patients, with (b) inference-only loading of H4's released S4 track.
+#   The pull-only condition performs no H2 update on S4.
+#   Report only after H4 has completed its own track training."
+_base_: "../default.yaml"
+experiment:
+  name: "ablation_a8_reconnection"
+ablation:
+  id: "A8_Reconnection"
+  h2_reconnection_mode: "pull_only"  # or "private_head"
+  description: "H2 reconnection: private head vs inference-only S4 load after H4 completes"
