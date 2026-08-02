@@ -1,0 +1,14 @@
+{
+  "baseline_id": "B5_FedAMM",
+  "name": "FedAMM Baseline Reference",
+  "paper_reference": "FedAMM: Federated Multi-Modal Alignment for Heterogeneous Medical Image Segmentation (IEEE TMI 2024)",
+  "paper_doi": "https://doi.org/10.1109/TMI.2024.3351234",
+  "source_repository": "internal_reproduction",
+  "source_commit": "internal_reproduction",
+  "prototype_aggregation_scheme": "per_combination",
+  "policy_matrix_enforcement": false,
+  "hyperparameter_overrides": {
+    "combination_prototype_dim": 256,
+    "alignment_temperature": 0.1
+  }
+}

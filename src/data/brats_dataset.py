@@ -175,14 +175,14 @@ class BraTSDataset(Dataset):
         return sample_dict
 
     def load_patient_volume(self, pid: str) -> Dict[str, Union[Dict[str, np.ndarray], np.ndarray]]:
-        """Load entire 3D volume arrays (155, 240, 240) for a patient."""
+        """Load 3D volume arrays (155, 240, 240) using memory mapping for minimal RAM footprint."""
         patient_dir = self.cache_root / pid
         res = {"modalities": {}, "labels": None}
         for mod in self.modalities:
             npy_path = patient_dir / f"{mod.lower()}.npy"
             if npy_path.exists():
-                res["modalities"][mod] = np.load(npy_path)
+                res["modalities"][mod] = np.load(npy_path, mmap_mode="r")
         lbl_path = patient_dir / "labels.npy"
         if lbl_path.exists():
-            res["labels"] = np.load(lbl_path)
+            res["labels"] = np.load(lbl_path, mmap_mode="r")
         return res

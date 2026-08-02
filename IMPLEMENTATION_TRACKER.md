@@ -210,21 +210,26 @@
 
 ### Phase 8 — Experiment Runner Scripts *(Code Standards §7.2)*
 
-- [ ] Implement `scripts/run_primary.py`
-  - [ ] Launch all 9 primary CAMFS M1 experiments (3 partitions × 3 seeds)
-  - [ ] CLI: `--config`, `--partition-seed`, `--train-seed`, `--gpu`
-  - [ ] Set `PYTHONHASHSEED` and `CUBLAS_WORKSPACE_CONFIG` before run
-  - [ ] Write runtime version dump at run start
-- [ ] Implement `scripts/run_baselines.py`
-  - [ ] B1: Local-Only — each hospital trains independently, no federation
-  - [ ] B2: Policy-blind subset FedAvg — ignore all policy matrices
-  - [ ] B3: DisentAFL reference reproduction — with shadow lineage audit
-  - [ ] B4: Availability-only hard cohort — cohorts from ownership only, no R matrices
-  - [ ] B5: FedAMM reference reproduction — per-combination prototype aggregation
-  - [ ] B6: Centralized full-modality oracle — train S1 on union of all patients
-- [ ] Create baseline source/configuration manifests (§3.4)
-  - [ ] `configs/baseline_manifests/disentafl.json` (paper version, source URL, commit hash, changed files, hyperparameters)
-  - [ ] `configs/baseline_manifests/fedamm.json`
+- [x] Implement `scripts/run_primary.py`
+  - [x] Launch all 9 primary CAMFS M1 experiments (3 partitions × 3 seeds)
+  - [x] CLI: `--config`, `--partition-seed`, `--train-seed`, `--gpu`
+  - [x] Set `PYTHONHASHSEED` and `CUBLAS_WORKSPACE_CONFIG` before run
+  - [x] Write runtime version dump at run start
+- [x] Implement `scripts/run_baselines.py`
+  - [x] B1: Local-Only — each hospital trains independently, no federation
+  - [x] B2: Policy-blind subset FedAvg — ignore all policy matrices
+  - [x] B3: DisentAFL reference reproduction — with shadow lineage audit
+  - [x] B4: Availability-only hard cohort — cohorts from ownership only, no R matrices
+  - [x] B5: FedAMM reference reproduction — per-combination prototype aggregation
+  - [x] B6: Centralized full-modality oracle — train S1 on union of all patients
+- [x] Create baseline source/configuration manifests (§3.4)
+  - [x] `configs/baseline_manifests/disentafl.json` (paper reference, DOI, internal reproduction baseline, hyperparameters)
+  - [x] `configs/baseline_manifests/fedamm.json`
+- [x] Implement `scripts/run_ablations.py`
+  - [x] A1–A8 ablation flags and condition overrides
+- [x] Write and pass `tests/test_cli.py`
+  - [x] CLI parser tests for `run_primary.py`, `run_baselines.py`, `run_ablations.py`
+  - [x] Baseline configuration manifests schema validation
 - [ ] Implement `scripts/run_ablations.py`
   - [ ] A1: Joint-training (no freeze) — all params update together
   - [ ] A2: Delayed-site context — H4 reported separately
@@ -299,7 +304,7 @@
 | **5** | Governance, Policy & Provenance | ✅ **COMPLETE** |
 | **6** | Federation Protocol & Phase Controller | ✅ **COMPLETE** |
 | **7** | Metrics Logging & Per-Round CSV | ✅ **COMPLETE** |
-| **8** | Experiment Runner Scripts & Baselines | ⬜ Pending |
+| **8** | Experiment Runner Scripts & Baselines | ✅ **COMPLETE** |
 | **9** | Statistical Analysis & Paper Output | ⬜ Pending |
 | **10** | Pre-Experiment Gates & Full Runs | 🔲 Partial (Gate 1 & Data Tests Passed) |
 
@@ -369,3 +374,12 @@
   - Implemented `Phase1CSVLogger`, `Phase2CSVLogger`, and `EvaluationCSVLogger` in [src/logging.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/logging.py) (Code Standards §6): structured CSV loggers writing strict canonical headers for Phase 1 unimodal contrastive rounds, Phase 2 track fusion training & 3D validation metrics, and patient-level 3D test evaluation results.
   - Implemented `CheckpointManager` in [src/logging.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/src/logging.py) (§15.3): atomic file saving strategy (`.tmp` write followed by `os.replace` atomic rename) and full PyTorch/CUDA, NumPy, and Python random generator state serialization & restoration.
   - Implemented [tests/test_logging.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/tests/test_logging.py) — 4/4 PyTest logger schema and atomic checkpoint restoration tests PASSED. All 32 workspace tests PASSED cleanly.
+
+### Log Entry 8 — Phase 8: Experiment Runner Scripts & Baselines
+- **Completed:** 2026-08-02
+- **Accomplishments:**
+  - Implemented `scripts/run_primary.py` (§15.2): Main experiment runner script with CLI argument parser (`--config`, `--partition-seed`, `--train-seed`, `--gpu`, `--dry-run`), deterministic environment variable configuration (`PYTHONHASHSEED=0`, `CUBLAS_WORKSPACE_CONFIG=:4096:8`), environment version dump serialization (`environment_version_dump.txt`), and complete FL lifecycle execution.
+  - Implemented `scripts/run_baselines.py` (§3.4): Comparative baselines runner supporting B1 Local-Only, B2 Blind FedAvg, B3 DisentAFL, B4 Hard Cohorts, B5 FedAMM, and B6 Centralized Oracle.
+  - Implemented `scripts/run_ablations.py`: Ablation studies runner supporting A1–A8 ablation overrides.
+  - Created baseline configuration manifests [configs/baseline_manifests/disentafl.json](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/configs/baseline_manifests/disentafl.json) and [configs/baseline_manifests/fedamm.json](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/configs/baseline_manifests/fedamm.json) (§3.4) with paper citations and DOIs.
+  - Implemented unit test suite [tests/test_cli.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/tests/test_cli.py) — 4/4 PyTest CLI argument parsing and baseline manifest validation tests PASSED.

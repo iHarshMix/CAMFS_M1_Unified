@@ -1,0 +1,14 @@
+{
+  "baseline_id": "B3_DisentAFL",
+  "name": "DisentAFL Baseline Reference",
+  "paper_reference": "DisentAFL: Disentangled Federated Learning for Multi-Modal Medical Image Segmentation (MICCAI 2023)",
+  "paper_doi": "https://doi.org/10.1007/978-3-031-43904-9_42",
+  "source_repository": "internal_reproduction",
+  "source_commit": "internal_reproduction",
+  "audit_mode": "shadow",
+  "policy_matrix_enforcement": false,
+  "hyperparameter_overrides": {
+    "disentangled_loss_weight": 0.1,
+    "adversarial_loss_weight": 0.05
+  }
+}

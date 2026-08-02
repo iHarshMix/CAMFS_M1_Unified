@@ -84,10 +84,11 @@ class FederatedClient:
     def bootstrap_round0_prototypes(
         self,
         encoders: Dict[str, UnimodalEncoder],
+        max_patients: Optional[int] = None,
     ) -> Tuple[Dict[str, torch.Tensor], Dict[str, torch.Tensor]]:
         """
         Round 0 No-Optimizer Prototype Bootstrap (§6.2).
-        Evaluates all local 155 slices per patient in FP32 without augmentation.
+        Evaluates local 155 slices per patient in FP32 without augmentation.
         NO optimizer steps or weight updates occur.
 
         Returns:
@@ -96,6 +97,8 @@ class FederatedClient:
         dataset = self.get_dataset()
         prototypes_out = {}
         support_counts_out = {}
+
+        patient_list = self.patient_ids[:max_patients] if max_patients else self.patient_ids
 
         with torch.no_grad():
             for m in self.send_modalities:
@@ -108,7 +111,7 @@ class FederatedClient:
                 all_z = []
                 all_labels = []
 
-                for pid in self.patient_ids:
+                for pid in patient_list:
                     vol_data = dataset.load_patient_volume(pid)
                     # vol_data['modalities'][m]: (155, 240, 240)
                     # vol_data['labels']: (155, 240, 240)
