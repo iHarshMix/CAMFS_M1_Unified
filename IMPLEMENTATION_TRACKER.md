@@ -241,21 +241,21 @@
 
 ### Phase 9 — Statistical Analysis & Paper Output *(Spec §14.5, Code Standards §11)*
 
-- [ ] Implement `src/statistics.py` (§14.5)
-  - [ ] 10,000 PCG64 percentile-bootstrap resamples over patient identities with seed 8803
-  - [ ] Paired contrasts d_{p,r,s} averaged over seeds then partitions
-  - [ ] Run-aware sensitivity interval with hierarchical resamples (seed 8804)
-  - [ ] Per-hospital results (never average away harm to one site)
-- [ ] Implement `scripts/generate_tables.py`
-  - [ ] Read CSVs from `outputs/results/aggregated/`
-  - [ ] Produce LaTeX tables: `primary_results.tex`, `ablation_results.tex`, `lineage_audit_summary.tex`
-  - [ ] Validate on dummy CSV data
-- [ ] Implement figure generation with `matplotlib`
-  - [ ] Style: `seaborn-v0_8-paper`, font size 10, serif family
-  - [ ] Save as PDF (LaTeX) and PNG (slides) to `outputs/figures/`
-  - [ ] Plots: `phase1_convergence.pdf`, `phase2_validation_curves.pdf`, `ablation_a3_audit.pdf`
-- [ ] Write and pass `tests/test_statistics.py`
-  - [ ] Test bootstrap CI calculation, sensitivity intervals, and per-hospital metrics on synthetic data
+- [x] Implement `src/statistics.py` (§14.5)
+  - [x] 10,000 PCG64 percentile-bootstrap resamples over patient identities with seed 8803
+  - [x] Paired contrasts d_{p,r,s} averaged over seeds then partitions
+  - [x] Run-aware sensitivity interval with hierarchical resamples (seed 8804)
+  - [x] Per-hospital results (never average away harm to one site)
+- [x] Implement `scripts/generate_tables.py`
+  - [x] Read CSVs from `outputs/results/aggregated/`
+  - [x] Produce LaTeX tables: `primary_results.tex`, `ablation_results.tex`, `lineage_audit_summary.tex`
+  - [x] Validate on dummy CSV data
+- [x] Implement figure generation with `matplotlib` (`scripts/generate_figures.py`)
+  - [x] Style: `seaborn-v0_8-paper`, font size 10, serif family
+  - [x] Save as PDF (LaTeX) and PNG (slides) to `outputs/figures/`
+  - [x] Plots: `phase1_convergence.pdf`, `phase2_validation_curves.pdf`, `ablation_a3_audit.pdf`
+- [x] Write and pass `tests/test_statistics.py`
+  - [x] Test bootstrap CI calculation, sensitivity intervals, and per-hospital metrics on synthetic data
 
 ---
 
@@ -273,14 +273,14 @@
   - [x] `test_protocol.py` (Passed 3/3)
   - [x] `test_determinism.py` (Passed 1/1)
   - [x] `test_logging.py` (Passed 4/4)
-  - [ ] `test_ablations.py`
-  - [ ] `test_statistics.py`
+  - [x] `test_ablations.py` (Passed 9/9)
+  - [x] `test_statistics.py` (Passed 4/4)
 - [ ] **Gate 4:** Single Phase 1 round produces valid loss and prototype updates
 - [ ] **Gate 5:** Phase 1 converges (prototype drift < 0.01 for 5 rounds)
 - [ ] **Gate 6:** Phase 1 → Freeze → Phase 2 produces positive Dice on validation (one partition)
 - [ ] **Gate 7:** Lineage audit log correctly chained; synthetic forbidden packet rejected
 - [ ] **Gate 8:** All endpoints, tests, and A1–A8 ablation configurations frozen before inspecting test results
-- [ ] **Gate 9:** `generate_tables.py` produces valid LaTeX from dummy CSV data
+- [x] **Gate 9:** `generate_tables.py` produces valid LaTeX from dummy CSV data
 - [ ] **Launch:** Run all 9 primary M1 experiments (3 partitions × 3 seeds)
 - [ ] **Launch:** Run all 8 ablation studies (A1–A8) across 9 runs
 - [ ] **Evaluate:** Aggregate results, compute bootstrap CIs and per-hospital metrics
@@ -301,7 +301,7 @@
 | **6** | Federation Protocol & Phase Controller | ✅ **COMPLETE** |
 | **7** | Metrics Logging & Per-Round CSV | ✅ **COMPLETE** |
 | **8** | Experiment Runner & Ablation Configs | ✅ **COMPLETE** |
-| **9** | Statistical Analysis & Paper Output | ⬜ Pending |
+| **9** | Statistical Analysis & Paper Output | ✅ **COMPLETE** |
 | **10** | Pre-Experiment Gates & Full Runs | 🔲 Partial (Gates 1 & 3 Passed) |
 
 ---
@@ -378,3 +378,11 @@
   - Implemented `scripts/run_ablations.py` (§14.3): Full ablation study runner supporting all 8 conditions: A1 (Joint-training without freeze), A2 (Delayed-site context), A3 (Executable lineage audit reject-mode self-verification), A4 ($\lambda_1$ sweep), A5 (Cold-start Tiers 1–3), A6 (Directional T2 policy), A7 (Multi-track contribution toggle), and A8 (H2 reconnection).
   - Created all 8 ablation YAML config files in `configs/ablations/` (`a1_joint_training.yaml` through `a8_reconnection.yaml`).
   - Implemented unit test suite [tests/test_ablations.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/tests/test_ablations.py) — 9/9 PyTest ablation configuration and CLI parser tests PASSED. All 41 workspace tests PASSED cleanly.
+
+### Log Entry 9 — Phase 9: Statistical Analysis & Paper Output
+- **Completed:** 2026-08-02
+- **Accomplishments:**
+  - Implemented `src/statistics.py` (§14.5): Statistical analysis engine supporting 10,000 PCG64 percentile-bootstrap confidence intervals over patient identities (seed 8803), paired patient-level contrasts $d_{p,r,s}$ averaged over seeds then partitions, hierarchical run-aware sensitivity intervals (seed 8804), and per-hospital non-aggregation statistics for $H_1, H_2, H_3, H_4$.
+  - Implemented `scripts/generate_tables.py` (Code Standards §11.1): Paper LaTeX table generator outputting `primary_results.tex`, `ablation_results.tex`, and `lineage_audit_summary.tex`.
+  - Implemented `scripts/generate_figures.py` (Code Standards §11.2): Matplotlib publication figure generator (`seaborn-v0_8-paper` style, font size 10, serif family) producing PDF and PNG outputs for `phase1_convergence`, `phase2_validation_curves`, and `ablation_a3_audit`.
+  - Implemented unit test suite [tests/test_statistics.py](file:///home/harsh/Research/Camfs/CAMFS_M1_Unified/tests/test_statistics.py) — 4/4 PyTest statistical methods tests PASSED. All 45 workspace unit tests PASSED cleanly.
