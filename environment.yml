@@ -7,7 +7,7 @@ dependencies:
   - python=3.10
   - pip
   - pip:
-      - --index-url https://download.pytorch.org/whl/cu121
+      - --extra-index-url https://download.pytorch.org/whl/cu121
       - torch==2.1.2
       - torchvision==0.16.2
       - numpy==1.26.4
