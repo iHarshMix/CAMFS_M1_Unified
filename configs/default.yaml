@@ -1,0 +1,104 @@
+# CAMFS M1 Master Configuration
+# Stage 1 Pilot Setting: BraTS 2020 dataset
+
+experiment:
+  name: "camfs_m1_primary"
+  partition_seeds: [1103, 2207, 3301]
+  training_seeds: [17, 29, 43]
+  bootstrap_seed: 8803
+  sensitivity_seed: 8804
+
+dataset:
+  name: "BraTS2020"
+  root: "dataset/raw"
+  expected_labeled_patients: 369
+  cache_root: "outputs/preprocessed"
+  cache_format: "per_patient_npy"
+  cache_contains_augmentation: false
+  input_size: [240, 240]
+  modalities: ["T1", "T1ce", "T2", "FLAIR"]
+  label_remap: {0: 0, 1: 1, 2: 2, 4: 3}
+  slices_per_patient: 155
+  batch_size: 16
+  num_workers: 4
+
+partition:
+  patient_id_order: "official_identifier_lexicographic"
+  rng: "PCG64"
+  fixed_h3_final_test_seed: 901
+  fixed_h3_final_test_patients: 50
+  h3_final_test_excluded_from: ["train", "validation", "calibration", "model_selection"]
+  hospitals:
+    H1: {patients_ratio: 0.40, owned: ["T1", "T1ce", "T2", "FLAIR"], send: ["T1", "T1ce", "T2", "FLAIR"]}
+    H2: {patients_ratio: 0.25, owned: ["T1", "T1ce", "T2"],         send: ["T1", "T2"]}
+    H3: {patients_ratio: 0.20, owned: ["T1", "FLAIR"],              send: ["T1", "FLAIR"]}
+    H4: {patients_ratio: 0.15, owned: ["T1", "T1ce", "T2"],          send: ["T1", "T1ce", "T2"]}
+
+governance:
+  policy_manifest: "configs/policy_M1_PRIMARY_V1.json"
+  policy_version: "M1_PRIMARY_V1"
+  audit_mode: "reject"
+  ledger_canonical_json: true
+
+reproducibility:
+  deterministic_algorithms: true
+  allow_tf32: false
+  precision: "fp32"
+
+primary_exclusions:
+  class_weighting: false
+  deep_supervision: false
+  learning_rate_schedule: false
+  gradient_clipping: false
+  postprocessing: false
+
+phase1:
+  lr: 3.0e-4
+  lambda1: 1.0
+  tau: 0.1
+  bottleneck_samples: "all_15x15"
+  min_rounds: 20
+  max_rounds: 100
+  drift_epsilon: 0.01
+  drift_patience: 5
+  local_epochs: 1
+
+phase2:
+  lr: 1.0e-3
+  lambda2: 0.1
+  tau: 0.1
+  validation_selection: "highest_contributor_patient_weighted_macro_dice"
+  tie_break: "earliest_exact_tie"
+  min_rounds: 20
+  max_rounds: 100
+  patience: 10
+  improvement_threshold: 1.0e-4
+  local_epochs: 1
+
+optimizer:
+  type: "AdamW"
+  betas: [0.9, 0.999]
+  eps: 1.0e-8
+  weight_decay: 1.0e-4
+
+federation_protocol:
+  phase1_round0: "no_optimizer_prototype_bootstrap"
+  new_phase2_track_bootstrap: "no_optimizer_fused_prototype_bootstrap"
+  fresh_local_optimizer_each_round: true
+  retain_local_optimizer_state_between_rounds: false
+  server_optimizer: false
+  prototype_recompute: "eval_fp32_all_training_patients_all_155_slices_no_augmentation"
+  aggregation_weight: "distinct_local_patients_used_in_round"
+  prototype_aggregation_weight: "patients_with_supported_class"
+
+loss:
+  dice_smoothing: 1.0e-5
+  tumour_classes: [1, 2, 3]  # after label remap {0:BG, 1:NCR/NET, 2:ED, 3:ET}
+
+model:
+  encoder_channels: [32, 64, 128, 256, 256]
+  groupnorm_groups: 8
+  activation: "SiLU"
+  init: "kaiming_normal"
+  init_mode: "fan_out"
+  init_nonlinearity: "relu"

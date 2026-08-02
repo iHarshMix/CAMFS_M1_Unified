@@ -81,3 +81,10 @@ outputs/
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Documentation & Spec Reference Folder
+M1_Implementation_spec_doc/
+
+
+
+#spec folder
