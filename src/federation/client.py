@@ -185,8 +185,8 @@ class FederatedClient:
         augmenter = PairwiseAugmentation(modalities=self.send_modalities, is_training=True)
 
         # 1:1 Tumor vs. Non-Tumor Slice Sampler (§13.4)
-        slice_sampler = SliceSampler(dataset, seed=self.seed)
-        samples = slice_sampler.sample_slices_for_round(slices_per_patient=16)
+        slice_sampler = SliceSampler(self.preprocessed_dir, self.patient_ids)
+        samples = slice_sampler.get_epoch_samples(seed=self.seed, is_training=True)
 
         # Local training epochs
         for epoch in range(local_epochs):
@@ -310,8 +310,8 @@ class FederatedClient:
 
         p2_loss_fn = Phase2Loss(lambda2=0.1, tau=0.1, eps_d=1e-5)
         augmenter = PairwiseAugmentation(modalities=track_modalities, is_training=True)
-        slice_sampler = SliceSampler(dataset, seed=self.seed)
-        samples = slice_sampler.sample_slices_for_round(slices_per_patient=16)
+        slice_sampler = SliceSampler(self.preprocessed_dir, self.patient_ids)
+        samples = slice_sampler.get_epoch_samples(seed=self.seed, is_training=True)
 
         device_fused_proto = global_fused_prototypes.to(self.device)
 
