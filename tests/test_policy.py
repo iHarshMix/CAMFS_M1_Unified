@@ -32,9 +32,9 @@ def test_cohort_closure():
     policy = PolicyManager(POLICY_PATH)
 
     # Valid closed cohorts
-    assert policy.verify_cohort_closure("T1", ["H1", "H2", "H3"])
-    assert policy.verify_cohort_closure("T1ce", ["H1"])
-    assert policy.verify_cohort_closure("T2", ["H1", "H2"])
+    assert policy.verify_cohort_closure("T1", ["H1", "H2", "H3", "H4"])
+    assert policy.verify_cohort_closure("T1ce", ["H1", "H4"])
+    assert policy.verify_cohort_closure("T2", ["H1", "H2", "H4"])
     assert policy.verify_cohort_closure("FLAIR", ["H1", "H3"])
 
     # Invalid proposed cohorts (policy violations)

@@ -15,15 +15,15 @@
     "H4": ["T1", "T1ce", "T2"]
   },
   "encoder_cohorts": {
-    "T1": ["H1", "H2", "H3"],
-    "T1ce": ["H1"],
-    "T2": ["H1", "H2"],
+    "T1": ["H1", "H2", "H3", "H4"],
+    "T1ce": ["H1", "H4"],
+    "T2": ["H1", "H2", "H4"],
     "FLAIR": ["H1", "H3"]
   },
   "delayed_read_only_recipients": {
-    "T1": ["H4"],
-    "T1ce": ["H4"],
-    "T2": ["H4"],
+    "T1": [],
+    "T1ce": [],
+    "T2": [],
     "FLAIR": []
   },
   "private_local_copies": {
@@ -37,24 +37,29 @@
     },
     "S2": {
       "modalities": ["T1", "T2"],
-      "contributors": ["H2"],
-      "authorized_receivers": ["H2"]
+      "contributors": ["H2", "H1", "H4"],
+      "authorized_receivers": ["H2", "H4"]
     },
     "S3": {
       "modalities": ["T1", "FLAIR"],
       "contributors": ["H3", "H1"],
-      "authorized_receivers": ["H3"]
+      "authorized_receivers": ["H3", "H1"]
     },
     "S4": {
       "modalities": ["T1", "T1ce", "T2"],
-      "contributors": ["H4"],
+      "contributors": ["H4", "H1"],
       "authorized_receivers": ["H4"]
     }
   },
   "multi_track_contribution": {
     "R_contribute": {
       "H1": {
-        "S3": 1
+        "S2": 1,
+        "S3": 1,
+        "S4": 1
+      },
+      "H4": {
+        "S2": 1
       }
     }
   }

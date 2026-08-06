@@ -124,8 +124,8 @@ class PolicyManager:
         multi_track = self.manifest.get("multi_track_contribution", {}).get("R_contribute", {})
         client_opts = multi_track.get(contributor_id, {})
         if client_opts.get(track_id, 0) == 1:
-            # Must own/send at least a superset of track_modalities to contribute masked features
-            if track_modalities.issubset(send_modalities):
+            owned_modalities = set(self.ownership[contributor_id])
+            if track_modalities.issubset(owned_modalities):
                 return True
 
         return False

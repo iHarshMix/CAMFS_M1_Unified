@@ -82,6 +82,7 @@ def parse_args():
     parser.add_argument("--partition-seed", type=int, default=1103, help="Patient partition seed")
     parser.add_argument("--train-seed", type=int, default=17, help="Training seed")
     parser.add_argument("--gpu", type=int, default=0, help="GPU device ID")
+    parser.add_argument("--max-gpu-memory-gb", type=float, default=20.0, help="Max GPU VRAM memory limit in GB")
     parser.add_argument("--max-p1-rounds", type=int, default=100, help="Max Phase 1 rounds")
     parser.add_argument("--max-p2-rounds", type=int, default=100, help="Max Phase 2 rounds")
     parser.add_argument("--dry-run", action="store_true", help="Dry run mode (1 round for Phase 1 & 2)")
@@ -184,6 +185,15 @@ def run_ablation_experiment(args):
 
     set_deterministic(args.train_seed)
     device = f"cuda:{args.gpu}" if torch.cuda.is_available() and args.gpu >= 0 else "cpu"
+
+    if torch.cuda.is_available() and args.gpu >= 0 and args.max_gpu_memory_gb is not None:
+        device_id = args.gpu
+        total_mem = torch.cuda.get_device_properties(device_id).total_memory
+        max_bytes = int(args.max_gpu_memory_gb * 1024 * 1024 * 1024)
+        if total_mem > max_bytes:
+            fraction = max_bytes / total_mem
+            torch.cuda.set_per_process_memory_fraction(fraction, device_id)
+            print(f"GPU VRAM limit set to {args.max_gpu_memory_gb:.1f} GB (fraction: {fraction:.4f})", flush=True)
 
     experiment_id = _build_experiment_id(args)
     log_dir = Path(args.output_dir) / "logs" / experiment_id
@@ -311,7 +321,9 @@ def run_ablation_experiment(args):
     bootstrapped_counts = {}
     max_b_patients = 2 if args.dry_run else None
 
-    for hid, client in clients.items():
+    p1_hospitals = [hid for hid in clients if any(hid in cohort for cohort in policy.encoder_cohorts.values())]
+    for hid in p1_hospitals:
+        client = clients[hid]
         protos, counts = client.bootstrap_round0_prototypes(server.encoders, max_patients=max_b_patients)
         for m, proto in protos.items():
             if m not in bootstrapped_protos:
@@ -336,7 +348,8 @@ def run_ablation_experiment(args):
         client_updates = []
 
         # A6 Directional T2 override: Exclude H2's T2 update from global server aggregation
-        for hid, client in clients.items():
+        for hid in p1_hospitals:
+            client = clients[hid]
             up = client.train_phase1_round(
                 global_encoders=server.encoders,
                 global_prototypes=server.prototypes,

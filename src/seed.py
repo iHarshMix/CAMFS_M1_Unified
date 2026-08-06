@@ -29,9 +29,12 @@ def set_deterministic(seed: int) -> None:
     torch.backends.cudnn.allow_tf32 = False
     
     try:
-        torch.use_deterministic_algorithms(True)
-    except AttributeError:
-        pass
+        torch.use_deterministic_algorithms(True, warn_only=True)
+    except (AttributeError, TypeError):
+        try:
+            torch.use_deterministic_algorithms(True)
+        except Exception:
+            pass
 
 def seed_worker(worker_id: int) -> None:
     """Worker initialization function for PyTorch DataLoaders."""

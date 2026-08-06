@@ -11,8 +11,9 @@ Spec reference: §13.4
 
 import math
 import random
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Tuple, Union
 import torch
+import torch.nn.functional as F
 import torchvision.transforms.functional as TF
 
 class PairwiseAugmentation:
@@ -64,3 +65,55 @@ class PairwiseAugmentation:
             sample_dict["label"] = label.squeeze(0)
 
         return sample_dict
+
+    def augment_batch(
+        self,
+        mod_batches: Dict[str, torch.Tensor],
+        y_batch: torch.Tensor,
+    ) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
+        """
+        Pure PyTorch CUDA native 2D pairwise augmentation (§13.4).
+        Uses native GPU tensor flips and F.grid_sample affine rotations.
+        """
+        if not self.is_training:
+            return mod_batches, y_batch
+
+        do_flip = random.random() < 0.5
+        angle = random.uniform(-10.0, 10.0)
+
+        grid = None
+        if abs(angle) > 1e-3 and len(mod_batches) > 0:
+            first_tensor = next(iter(mod_batches.values()))
+            rad = math.radians(-angle)
+            cos_a, sin_a = math.cos(rad), math.sin(rad)
+            B = first_tensor.shape[0]
+            theta = torch.tensor([
+                [cos_a, -sin_a, 0.0],
+                [sin_a,  cos_a, 0.0]
+            ], dtype=first_tensor.dtype, device=first_tensor.device).unsqueeze(0).repeat(B, 1, 1)
+            grid = F.affine_grid(theta, first_tensor.shape, align_corners=False)
+
+        aug_mods = {}
+        for mod, x_b in mod_batches.items():
+            if do_flip:
+                x_b = x_b.flip(dims=[-1])
+            if grid is not None:
+                x_b = F.grid_sample(x_b, grid, mode="bilinear", padding_mode="zeros", align_corners=False)
+
+            brain_mask = (x_b != 0.0)
+            scale = random.uniform(0.9, 1.1)
+            shift = random.uniform(-0.1, 0.1)
+            x_b = torch.where(brain_mask, x_b * scale + shift, torch.tensor(0.0, device=x_b.device))
+            aug_mods[mod] = x_b
+
+        # Process labels (B, 1, H, W)
+        if y_batch.ndim == 3:
+            y_batch = y_batch.unsqueeze(1)  # (B, 1, H, W)
+        
+        if do_flip:
+            y_batch = y_batch.flip(dims=[-1])
+        if grid is not None:
+            y_float = F.grid_sample(y_batch.float(), grid, mode="nearest", padding_mode="zeros", align_corners=False)
+            y_batch = y_float.long()
+
+        return aug_mods, y_batch.squeeze(1)
