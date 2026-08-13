@@ -14,6 +14,7 @@ Orchestrates end-to-end CAMFS M1 FL training:
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import os
 import platform
@@ -35,6 +36,7 @@ from src.federation import FederatedClient, FederatedPhaseState, FederatedServer
 from src.governance import LineageAuditor, PolicyManager, ProvenanceLedger
 from src.logging import CheckpointManager, EvaluationCSVLogger, Phase1CSVLogger, Phase2CSVLogger
 from src.metrics import PatientEvaluator
+from src.models import SubsetFusionHead, UNetDecoder
 from src.seed import set_deterministic
 
 
@@ -322,6 +324,10 @@ def run_experiment(args):
         p2_round = p2_data.get("round", 0) + 1
 
     while controller.state == FederatedPhaseState.PHASE2:
+        if p2_round > controller.max_p2_rounds:
+            print(f"=== Phase 2 Already Reached Max Rounds ({controller.max_p2_rounds}). Skipping Phase 2 Loop ===", flush=True)
+            break
+
         print(f"--- [Phase 2] Starting Round {p2_round}/{controller.max_p2_rounds} ---", flush=True)
         val_dices = {}
 
@@ -413,9 +419,168 @@ def run_experiment(args):
 
         p2_round += 1
 
+    print(f"=== Phase 2 Federated Training Completed ({experiment_id}) ===")
+
+    # ==========================================
+    # Post-Phase 2: H2 Private Local Head (§9.5(b) + §10.2 Tier-1 Net2Net)
+    # ==========================================
+    # Hospital 2 owns {T1, T1ce, T2} but only sends {T1, T2}.
+    # After federated Track S2' = {T1, T2} training completes, H2 builds a private
+    # local head for {T1, T1ce, T2} by widening S2' via Tier-1 Net2Net and fine-tuning
+    # locally. This head is NEVER transmitted — privacy is structural.
+
+    h2_owned = policy.ownership.get("H2", [])
+    h2_send = policy.send_subsets.get("H2", [])
+    h2_private_mods = [m for m in h2_owned if m not in h2_send]
+
+    if h2_private_mods and "H2" in clients and not args.dry_run:
+        from src.models.fusion import CANONICAL_MODALITY_ORDER, net2net_widen_fusion_head
+
+        print("=== Starting Post-Phase 2: H2 Private Local Head (Tier-1 Net2Net from S2') ===", flush=True)
+
+        local_track_mods = [m for m in CANONICAL_MODALITY_ORDER if m in h2_owned]
+        h2_client = clients["H2"]
+
+        # Step 1: Load best S2' checkpoint
+        s2_chkpt_path = chkpt_dir / "best_track_S2.pt"
+        if not s2_chkpt_path.exists():
+            print(f"WARNING: Best S2' checkpoint not found at {s2_chkpt_path}. Skipping H2 local head.", flush=True)
+        else:
+            s2_data = CheckpointManager.load_checkpoint(s2_chkpt_path, device="cpu")
+            s2_source_round = s2_data.get("round", -1)
+            s2_source_dice = s2_data.get("val_macro_dice", 0.0)
+            print(f"  Loaded S2' checkpoint (Round {s2_source_round}, Val Dice: {s2_source_dice*100:.2f}%)", flush=True)
+
+            # Step 2: Reconstruct trained S2' fusion head
+            s2_fusion = SubsetFusionHead(modality_subset=["T1", "T2"])
+            s2_fusion.load_state_dict(s2_data["state_dict"]["fusion"])
+
+            s2_decoder = UNetDecoder(num_classes=4)
+            s2_decoder.load_state_dict(s2_data["state_dict"]["decoder"])
+
+            # Step 3: Tier-1 Net2Net widening → Track_local,2 = {T1, T1ce, T2}
+            local_fusion = net2net_widen_fusion_head(
+                source_head=s2_fusion,
+                source_modalities=["T1", "T2"],
+                target_modalities=local_track_mods,
+            )
+            local_decoder = copy.deepcopy(s2_decoder)  # Direct copy — identical shapes
+
+            local_fused_protos = s2_data.get("prototypes", {}).get("fused", torch.zeros(4, 256))
+            if isinstance(local_fused_protos, dict):
+                local_fused_protos = torch.zeros(4, 256)
+
+            print(f"  Tier-1 Net2Net widening complete: {['T1', 'T2']} → {local_track_mods}", flush=True)
+            print(f"  T1ce slot zero-initialized. Day 0 output ≡ trained S2'.", flush=True)
+
+            # Step 4: Provenance ledger entry
+            ledger.record_event("H2_LOCAL_HEAD_SEED", {
+                "track": "H2_local",
+                "modalities": local_track_mods,
+                "seed_mechanism": "Tier1_Net2Net",
+                "source_track": "S2",
+                "source_round": s2_source_round,
+                "source_val_dice": s2_source_dice,
+            })
+
+            # Step 5: Local fine-tuning loop with early stopping (§8.6 stopping rules)
+            best_val_dice = 0.0
+            best_epoch = 0
+            no_improvement_count = 0
+            local_patience = 10
+            local_min_epochs = 20
+            local_max_epochs = args.max_p2_rounds  # Same as Phase 2 max rounds
+
+            for local_epoch in range(1, local_max_epochs + 1):
+                # Train 1 local epoch (reuses existing client method — zero code change)
+                up = h2_client.train_phase2_round(
+                    track_id="H2_local",
+                    track_modalities=local_track_mods,
+                    frozen_encoders=server.encoders,
+                    global_fusion_head=local_fusion,
+                    global_decoder=local_decoder,
+                    global_fused_prototypes=local_fused_protos.to(device) if isinstance(local_fused_protos, torch.Tensor) else torch.zeros(4, 256, device=device),
+                    local_epochs=1,
+                )
+
+                # Update local head with trained weights
+                local_fusion.load_state_dict(up["fusion_state_dict"])
+                local_decoder.load_state_dict(up["decoder_state_dict"])
+                local_fused_protos = up["fused_prototypes"]
+
+                # Evaluate on H2's validation patients
+                v_dice, v_hd95 = h2_client.evaluate_phase2_validation(
+                    track_id="H2_local",
+                    track_modalities=local_track_mods,
+                    frozen_encoders=server.encoders,
+                    global_fusion_head=local_fusion,
+                    global_decoder=local_decoder,
+                )
+
+                val_macro_dice = v_dice["macro"]
+
+                # Log metrics (appended to same phase2_metrics.csv)
+                p2_logger.log_round(
+                    round_num=local_epoch,
+                    track_id="H2_local",
+                    hospital_id="H2",
+                    loss_dice_ce=up.get("loss_dice_ce", 0.0),
+                    loss_fused_align=up.get("loss_fused_align", 0.0),
+                    total_loss=up.get("total_loss", 0.0),
+                    val_dice_dict=v_dice,
+                    val_hd95_dict=v_hd95,
+                )
+
+                print(f"  [H2 Local] Epoch {local_epoch}/{local_max_epochs} - "
+                      f"Val Macro Dice: {val_macro_dice*100:.2f}% - "
+                      f"Loss: {up.get('total_loss', 0.0):.4f}", flush=True)
+
+                # Model selection & early stopping (§8.6)
+                if val_macro_dice > best_val_dice + 1e-4:
+                    best_val_dice = val_macro_dice
+                    best_epoch = local_epoch
+                    no_improvement_count = 0
+
+                    CheckpointManager.save_checkpoint(
+                        filepath=chkpt_dir / "best_H2_local_head.pt",
+                        state_dict={
+                            "fusion": local_fusion.state_dict(),
+                            "decoder": local_decoder.state_dict(),
+                        },
+                        prototypes={"fused": local_fused_protos},
+                        current_round=local_epoch,
+                        val_macro_dice=val_macro_dice,
+                        extra_metadata={
+                            "track": "H2_local",
+                            "modalities": local_track_mods,
+                            "seed_mechanism": "Tier1_Net2Net_from_S2",
+                            "source_round": s2_source_round,
+                        },
+                    )
+                else:
+                    no_improvement_count += 1
+
+                if local_epoch >= local_min_epochs and no_improvement_count >= local_patience:
+                    print(f"  [H2 Local] Early stopping at epoch {local_epoch} "
+                          f"(best: {best_val_dice*100:.2f}% at epoch {best_epoch})", flush=True)
+                    break
+
+            # Step 6: Log completion to provenance ledger
+            ledger.record_event("H2_LOCAL_HEAD_TRAINED", {
+                "track": "H2_local",
+                "modalities": local_track_mods,
+                "best_epoch": best_epoch,
+                "best_val_dice": float(best_val_dice),
+                "total_epochs": local_epoch,
+                "network_transmission": "NEVER",
+            })
+
+            print(f"=== H2 Private Local Head Completed (Best: {best_val_dice*100:.2f}% at Epoch {best_epoch}) ===", flush=True)
+
     print(f"=== Experiment {experiment_id} Completed Successfully ===")
 
 
 if __name__ == "__main__":
     args = parse_args()
     run_experiment(args)
+

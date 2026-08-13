@@ -118,3 +118,69 @@ class SubsetFusionHead(nn.Module):
             fused_outputs[3],
             fused_outputs[4],
         )
+
+
+def net2net_widen_fusion_head(
+    source_head: SubsetFusionHead,
+    source_modalities: Sequence[str],
+    target_modalities: Sequence[str],
+) -> SubsetFusionHead:
+    """
+    Tier-1 Net2Net channel-widening (§10.2): create a wider fusion head from a trained narrower one.
+
+    Existing modality slots keep their trained weights. New modality slots are zero-initialized.
+    The ConvBlock after the 1×1 conv is copied directly (identical shapes).
+    On Day 0, the widened head produces outputs identical to the source head because
+    new slots contribute zero signal (0 × feature = 0).
+
+    Args:
+        source_head: Trained SubsetFusionHead with source_modalities.
+        source_modalities: Modality names in the source head (e.g., ["T1", "T2"]).
+        target_modalities: Modality names for the target head (must be superset of source,
+                           e.g., ["T1", "T1ce", "T2"]).
+
+    Returns:
+        New SubsetFusionHead with target_modalities, seeded from source via Net2Net widening.
+        ImageLineage(source) ⊆ source_modalities ⊆ target_modalities.
+    """
+    # Canonical ordering (same as SubsetFusionHead.__init__)
+    src_order = [m for m in CANONICAL_MODALITY_ORDER if m in source_modalities]
+    tgt_order = [m for m in CANONICAL_MODALITY_ORDER if m in target_modalities]
+
+    # Verify strict subset relationship (Tier-1 precondition)
+    if not set(src_order).issubset(set(tgt_order)):
+        raise ValueError(
+            f"Tier-1 Net2Net requires source modalities {src_order} ⊆ target {tgt_order}"
+        )
+
+    # Create target head with fresh Kaiming init (will be overwritten below)
+    target_head = SubsetFusionHead(
+        modality_subset=target_modalities,
+        channel_list=source_head.channel_list,
+        num_groups=source_head.num_groups,
+    )
+
+    # Widen each of the 5 fusion levels
+    for level_idx in range(len(source_head.fusion_blocks)):
+        C_r = source_head.channel_list[level_idx]
+
+        src_conv = source_head.fusion_blocks[level_idx][0]  # nn.Conv2d (1×1 compression)
+        tgt_conv = target_head.fusion_blocks[level_idx][0]  # nn.Conv2d (1×1 compression)
+
+        # Zero-initialize ALL target 1×1 weights (new slots stay zero)
+        tgt_conv.weight.data.zero_()
+        # Copy bias from source (output channels are identical: C_r)
+        tgt_conv.bias.data.copy_(src_conv.bias.data)
+
+        # Copy trained weights from source slots to their correct target positions
+        for src_idx, m in enumerate(src_order):
+            tgt_idx = tgt_order.index(m)
+            tgt_conv.weight.data[:, tgt_idx * C_r:(tgt_idx + 1) * C_r, :, :] = \
+                src_conv.weight.data[:, src_idx * C_r:(src_idx + 1) * C_r, :, :]
+
+        # Copy ConvBlock directly (shape [C_r, C_r, 3, 3] — modality-independent)
+        src_convblock = source_head.fusion_blocks[level_idx][1]
+        tgt_convblock = target_head.fusion_blocks[level_idx][1]
+        tgt_convblock.load_state_dict(src_convblock.state_dict())
+
+    return target_head
