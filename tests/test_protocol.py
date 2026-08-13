@@ -67,20 +67,23 @@ def test_patient_weighted_and_support_weighted_aggregation(tmp_path):
     server = FederatedServer(policy, ledger, auditor)
     server.initialize_phase1_models(modalities=["T1"])
 
-    # Create 3 client updates for closed cohort κ_T1 = [H1, H2, H3]
+    # Create 4 client updates for closed cohort κ_T1 = [H1, H2, H3, H4]
     enc1 = UnimodalEncoder()
     enc2 = UnimodalEncoder()
     enc3 = UnimodalEncoder()
+    enc4 = UnimodalEncoder()
 
     # Modify weights to known values
-    for p1, p2, p3 in zip(enc1.parameters(), enc2.parameters(), enc3.parameters()):
+    for p1, p2, p3, p4 in zip(enc1.parameters(), enc2.parameters(), enc3.parameters(), enc4.parameters()):
         p1.data.fill_(1.0)
         p2.data.fill_(5.0)
         p3.data.fill_(3.0)
+        p4.data.fill_(3.0)
 
     proto1 = torch.ones(4, 256)
     proto2 = torch.full((4, 256), 2.0)
     proto3 = torch.full((4, 256), 3.0)
+    proto4 = torch.full((4, 256), 3.0)
 
     client_updates = [
         {
@@ -104,9 +107,16 @@ def test_patient_weighted_and_support_weighted_aggregation(tmp_path):
             "support_counts": {"T1": torch.tensor([10, 10, 10, 10])},
             "image_lineage": {"T1"},
         },
+        {
+            "hospital_id": "H4",
+            "encoder_state_dicts": {"T1": enc4.state_dict()},
+            "prototypes": {"T1": proto4},
+            "support_counts": {"T1": torch.tensor([10, 10, 10, 10])},
+            "image_lineage": {"T1"},
+        },
     ]
 
-    patient_counts = {"H1": 10, "H2": 30, "H3": 10}
+    patient_counts = {"H1": 10, "H2": 30, "H3": 10, "H4": 10}
 
     server.aggregate_phase1_round(
         current_round=1,
@@ -114,9 +124,9 @@ def test_patient_weighted_and_support_weighted_aggregation(tmp_path):
         client_patient_counts=patient_counts,
     )
 
-    # Expected parameter weight: (10 * 1.0 + 30 * 5.0 + 10 * 3.0) / 50 = 190 / 50 = 3.8
+    # Expected parameter weight: (10 * 1.0 + 30 * 5.0 + 10 * 3.0 + 10 * 3.0) / 60 = 220 / 60 = 3.6667
     for p in server.encoders["T1"].parameters():
-        assert torch.allclose(p.data, torch.full_like(p.data, 3.8)), f"Expected aggregated weight 3.8, got {p.data[0]}"
+        assert torch.allclose(p.data, torch.full_like(p.data, 220.0 / 60.0)), f"Expected aggregated weight 3.6667, got {p.data[0]}"
 
 
 def copy_weights(model: torch.nn.Module):

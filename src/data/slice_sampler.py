@@ -26,27 +26,41 @@ class SliceSampler:
 
         self._index_slices()
 
+    _INDEX_CACHE: Dict[str, Tuple[List[Tuple[str, int]], List[Tuple[str, int]], List[Tuple[str, int]]]] = {}
+
     def _index_slices(self) -> None:
         """Scan patient label arrays to classify slices into tumor vs non-tumor brain slices."""
         for pid in self.patient_ids:
+            if pid in SliceSampler._INDEX_CACHE:
+                tumor_p, nontumor_p, all_p = SliceSampler._INDEX_CACHE[pid]
+                self.tumor_slices.extend(tumor_p)
+                self.nontumor_brain_slices.extend(nontumor_p)
+                self.all_slices.extend(all_p)
+                continue
+
             lbl_path = self.cache_root / pid / "labels.npy"
             if not lbl_path.exists():
                 raise FileNotFoundError(f"Label cache missing for patient {pid} at {lbl_path}")
             
             lbl_vol = np.load(lbl_path, mmap_mode="r")  # [155, 240, 240]
             
+            tumor_p, nontumor_p, all_p = [], [], []
             for s_idx in range(155):
                 slice_lbl = lbl_vol[s_idx]
-                self.all_slices.append((pid, s_idx))
+                all_p.append((pid, s_idx))
 
                 # Check if slice has tumor pixels (classes 1, 2, or 3)
                 has_tumor = np.any(slice_lbl > 0)
-                has_brain = np.any(slice_lbl >= 0)  # non-empty brain slice
 
                 if has_tumor:
-                    self.tumor_slices.append((pid, s_idx))
-                elif has_brain:
-                    self.nontumor_brain_slices.append((pid, s_idx))
+                    tumor_p.append((pid, s_idx))
+                else:
+                    nontumor_p.append((pid, s_idx))
+
+            SliceSampler._INDEX_CACHE[pid] = (tumor_p, nontumor_p, all_p)
+            self.tumor_slices.extend(tumor_p)
+            self.nontumor_brain_slices.extend(nontumor_p)
+            self.all_slices.extend(all_p)
 
     def get_epoch_samples(self, seed: int, is_training: bool = True) -> List[Tuple[str, int]]:
         """

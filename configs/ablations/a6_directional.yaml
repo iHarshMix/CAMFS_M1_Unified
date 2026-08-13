@@ -1,0 +1,13 @@
+# configs/ablations/a6_directional.yaml
+# Ablation A6: Group-symmetric vs directional T2 policy
+# Spec §14.3: "Keep all primary policy edges except T2.
+#   Directional: H1 receives only its own T2 cohort. H2 may download H1's frozen T2
+#   snapshot and fit a private, non-uploaded T2 copy. No aggregate containing H2's
+#   T2 update is returned to H1."
+_base_: "../default.yaml"
+experiment:
+  name: "ablation_a6_directional"
+ablation:
+  id: "A6_Directional"
+  t2_policy: "directional"
+  description: "Directional T2 policy: one-way T2 sharing without illegal post-mix filtering"

@@ -1,0 +1,14 @@
+# configs/ablations/a4_lambda1_sweep.yaml
+# Ablation A4: Unimodal alignment weight λ1 sweep
+# Spec §14.3: "Run λ1 ∈ {0, 0.1, 0.5, 1.0} on validation data only.
+#              The primary M1 value remains λ1 = 1 regardless of this exploratory sweep."
+_base_: "../default.yaml"
+experiment:
+  name: "ablation_a4_lambda1"
+ablation:
+  id: "A4_Lambda1Sweep"
+  sweep_values: [0.0, 0.1, 0.5, 1.0]
+  validation_only: true
+  description: "Lambda1 sweep: test contrastive alignment weight sensitivity on validation set"
+phase1:
+  lambda1: 0.0  # overridden per sweep iteration by run_ablations.py

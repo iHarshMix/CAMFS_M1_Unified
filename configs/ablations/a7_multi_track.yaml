@@ -1,0 +1,11 @@
+# configs/ablations/a7_multi_track.yaml
+# Ablation A7: Multi-track contribution toggle
+# Spec §14.3: "Compare the primary S3 cohort with R_contribute(H1,S3)=1
+#              against H3-only S3 training. All other settings unchanged."
+_base_: "../default.yaml"
+experiment:
+  name: "ablation_a7_multi_track"
+ablation:
+  id: "A7_MultiTrack"
+  r_contribute_h1_s3: false
+  description: "Multi-track contribution: disable H1 opt-in to S3, compare H3-only S3 training"

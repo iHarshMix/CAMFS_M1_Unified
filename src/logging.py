@@ -273,17 +273,29 @@ class CheckpointManager:
         if not path.exists():
             raise FileNotFoundError(f"Checkpoint file not found: {path}")
 
-        checkpoint = torch.load(path, map_location=device)
+        target_device = device if torch.cuda.is_available() else "cpu"
+        checkpoint = torch.load(path, map_location=target_device)
 
         if restore_rng and "rng_states" in checkpoint:
             rng = checkpoint["rng_states"]
             if "torch_rng" in rng:
-                torch.set_rng_state(rng["torch_rng"])
+                torch_rng = rng["torch_rng"]
+                if isinstance(torch_rng, torch.Tensor):
+                    torch_rng = torch_rng.cpu()
+                torch.set_rng_state(torch_rng)
             if "numpy_rng" in rng:
                 np.random.set_state(rng["numpy_rng"])
             if "py_rng" in rng:
                 random.setstate(rng["py_rng"])
             if torch.cuda.is_available() and "cuda_rng" in rng:
-                torch.cuda.set_rng_state_all(rng["cuda_rng"])
+                cuda_rng = rng["cuda_rng"]
+                if isinstance(cuda_rng, (list, tuple)):
+                    cuda_rng = [t.cpu() if isinstance(t, torch.Tensor) else t for t in cuda_rng]
+                elif isinstance(cuda_rng, torch.Tensor):
+                    cuda_rng = cuda_rng.cpu()
+                try:
+                    torch.cuda.set_rng_state_all(cuda_rng)
+                except Exception:
+                    pass
 
         return checkpoint

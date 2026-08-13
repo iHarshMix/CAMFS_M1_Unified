@@ -109,12 +109,13 @@ class FederatedServer:
             lineage = update["image_lineage"]
 
             for m, state_dict in update["encoder_state_dicts"].items():
+                lineage_set = lineage[m] if isinstance(lineage, dict) and m in lineage else (lineage if isinstance(lineage, set) else {m})
                 # 1. Audit Encoder Lineage Rule (§14.4)
                 approved, err = self.auditor.audit_encoder_packet(
                     packet_id=f"p1_r{current_round}_{hid}_{m}",
                     source_hospital=hid,
                     target_modality=m,
-                    image_lineage_set=lineage,
+                    image_lineage_set=lineage_set,
                 )
 
                 if not approved:

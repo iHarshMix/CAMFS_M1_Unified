@@ -1,0 +1,13 @@
+# configs/ablations/a3_lineage_audit.yaml
+# Ablation A3: Executable lineage audit — CAMFS reject mode self-verification
+# Spec §14.3/§14.4: Run executable lineage audit on all 9 partition/seed pairs.
+#   Require zero accepted violations across all runs.
+#   Every packet carries image_lineage set; reject any packet with forbidden lineage.
+_base_: "../default.yaml"
+experiment:
+  name: "ablation_a3_lineage_audit"
+ablation:
+  id: "A3_LineageAudit"
+  description: "Executable lineage audit: verify zero accepted policy violations across all runs"
+governance:
+  audit_mode: "reject"

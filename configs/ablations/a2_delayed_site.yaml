@@ -1,0 +1,11 @@
+# configs/ablations/a2_delayed_site.yaml
+# Ablation A2: Delayed-site context — H4 reported separately
+# Spec §14.3: "Report the primary H1-H3 federation and the H4 delayed S4 result separately.
+#              H4 does not alter S1,S2,S3 under M1 isolation."
+_base_: "../default.yaml"
+experiment:
+  name: "ablation_a2_delayed_site"
+ablation:
+  id: "A2_DelayedSite"
+  report_h4_separately: true
+  description: "Delayed-site context: report H4 S4 track results separately from H1-H3"

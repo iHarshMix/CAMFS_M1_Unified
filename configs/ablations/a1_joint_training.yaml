@@ -1,0 +1,12 @@
+# configs/ablations/a1_joint_training.yaml
+# Ablation A1: Joint-training (no Phase 1/Phase 2 separation)
+# Spec §14.3: "Do not freeze after Phase 1. Optimize L_Dice+CE + λ1*L_uni + λ2*L_fused-align
+#              and update encoders, fusion, and decoder together."
+_base_: "../default.yaml"
+experiment:
+  name: "ablation_a1_joint_training"
+ablation:
+  id: "A1_JointTraining"
+  skip_freeze: true
+  combined_loss: true
+  description: "Joint-training: no Phase 1/Phase 2 separation; all params update together"
