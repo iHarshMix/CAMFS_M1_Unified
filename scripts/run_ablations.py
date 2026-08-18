@@ -34,6 +34,11 @@ import torch.nn as nn
 os.environ["PYTHONHASHSEED"] = "0"
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
+# Add repository root to sys.path to allow running directly with 'python scripts/run_ablations.py'
+_repo_root = Path(__file__).resolve().parent.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
+
 from scripts.run_primary import dump_environment_info
 from src.config import load_yaml
 from src.experiment_utils import evaluate_all_tracks_on_pure_50, train_h2_private_local_head
