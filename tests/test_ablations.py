@@ -17,8 +17,15 @@ PyTest suite for Phase 8 ablation runners and configurations (Code Standards §7
 """
 
 import argparse
+import os
 from pathlib import Path
+import sys
 import pytest
+
+# Add repository root to sys.path
+_repo_root = Path(__file__).resolve().parent.parent
+if str(_repo_root) not in sys.path:
+    sys.path.insert(0, str(_repo_root))
 
 from scripts.run_ablations import ABLATION_CONFIG_MAP, ABLATION_IDS, parse_args as parse_ablation_args
 from scripts.run_primary import parse_args as parse_primary_args
