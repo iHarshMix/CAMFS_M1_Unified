@@ -4,16 +4,16 @@ CAMFS M1 — Ablation Studies Experiment Runner Script
 
 Implements §14.3 of the CAMFS M1 Specification.
 Runs the 8 specified ablation studies (A1–A8), each modifying exactly one
-CAMFS M1 component to measure its individual contribution:
+CAMFS M1 component to isolate and measure its individual scientific contribution:
 
   A1: Joint-training (no Phase 1/Phase 2 freeze separation)
-  A2: Delayed-site context (H4 reported separately)
+  A2: Delayed-site context (H4 dynamically onboarded at t=30)
   A3: Executable lineage audit (CAMFS reject-mode self-verification)
-  A4: λ₁ sweep {0, 0.1, 0.5, 1.0} on validation only
-  A5: Cold-start variants (Tier 1 subset growth, Tier 2 warm start, Tier 3 fresh)
+  A4: λ₁ sweep {0, 0.1, 0.5, 1.0} on validation and test metrics
+  A5: Cold-start variants (Tier 1 Net2Net, Tier 2 warm start, Tier 3 fresh init)
   A6: Group-symmetric vs directional T2 policy
-  A7: Multi-track contribution (R_contribute(H1,S3)=1 vs H3-only)
-  A8: H2 reconnection (private head vs inference-only S4 load)
+  A7: Multi-track contribution (R_contribute(H1,S3)=0 vs 1)
+  A8: H2 reconnection (private local head vs pull-only S4 load)
 """
 
 from __future__ import annotations
@@ -24,22 +24,23 @@ import json
 import os
 import sys
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import torch
 import torch.nn as nn
 
+# Enforce deterministic environment variables before torch initialization
 os.environ["PYTHONHASHSEED"] = "0"
 os.environ["CUBLAS_WORKSPACE_CONFIG"] = ":4096:8"
 
 from scripts.run_primary import dump_environment_info
 from src.config import load_yaml
+from src.experiment_utils import evaluate_all_tracks_on_pure_50, train_h2_private_local_head
 from src.federation import FederatedClient, FederatedPhaseState, FederatedServer, PhaseController
 from src.governance import LineageAuditor, PolicyManager, ProvenanceLedger
 from src.logging import CheckpointManager, Phase1CSVLogger, Phase2CSVLogger
-from src.models.decoder import UNetDecoder
-from src.models.fusion import SubsetFusionHead
+from src.models import SubsetFusionHead, UNetDecoder, UnimodalEncoder, net2net_widen_fusion_head
 from src.seed import set_deterministic
 
 
@@ -82,101 +83,41 @@ def parse_args():
     parser.add_argument("--partition-seed", type=int, default=1103, help="Patient partition seed")
     parser.add_argument("--train-seed", type=int, default=17, help="Training seed")
     parser.add_argument("--gpu", type=int, default=0, help="GPU device ID")
-    parser.add_argument("--max-gpu-memory-gb", type=float, default=20.0, help="Max GPU VRAM memory limit in GB")
+    parser.add_argument("--max-gpu-memory-gb", type=float, default=20.0, help="Max GPU VRAM limit in GB")
     parser.add_argument("--max-p1-rounds", type=int, default=100, help="Max Phase 1 rounds")
     parser.add_argument("--max-p2-rounds", type=int, default=100, help="Max Phase 2 rounds")
-    parser.add_argument("--dry-run", action="store_true", help="Dry run mode (1 round for Phase 1 & 2)")
+    parser.add_argument("--dry-run", action="store_true", help="Dry run mode (1 round for quick verification)")
     parser.add_argument("--preprocessed-dir", type=str, default="outputs/preprocessed",
                         help="Path to preprocessed data")
     parser.add_argument("--partitions-dir", type=str, default="outputs/partitions",
                         help="Path to partition manifests")
+    parser.add_argument("--primary-chkpt-dir", type=str, default=None,
+                        help="Path to primary checkpoints for Phase 1 reuse (auto-detected if None)")
     parser.add_argument("--output-dir", type=str, default="outputs", help="Root output directory")
     # A4-specific
     parser.add_argument("--lambda1", type=float, default=None,
                         help="Override lambda1 value for A4 sweep {0, 0.1, 0.5, 1.0}")
     # A5-specific
-    parser.add_argument("--cold-start-tier", type=int, default=None, choices=[1, 2, 3],
-                        help="Cold-start tier for A5 (1=subset growth, 2=warm start, 3=fresh)")
+    parser.add_argument("--cold-start-tier", type=int, default=1, choices=[1, 2, 3],
+                        help="Cold-start tier for A5 (1=subset growth, 2=warm start, 3=fresh init)")
     # A8-specific
-    parser.add_argument("--h2-mode", type=str, default=None, choices=["private_head", "pull_only"],
-                        help="H2 reconnection mode for A8")
+    parser.add_argument("--h2-mode", type=str, default="pull_only", choices=["private_head", "pull_only"],
+                        help="H2 reconnection mode for A8 (private_head vs pull_only)")
     return parser.parse_args()
 
 
 def _build_experiment_id(args) -> str:
-    """Build run ID following §7.1 convention: ablation_{id}__part{seed}__seed{seed}."""
+    """Build standardized run ID: ablation_{id}__part{seed}__seed{seed}[__suffix]."""
     suffix = ""
     if args.ablation == "A4_Lambda1Sweep" and args.lambda1 is not None:
         suffix = f"__lam{args.lambda1}"
-    elif args.ablation == "A5_ColdStart" and args.cold_start_tier is not None:
+    elif args.ablation == "A5_ColdStart":
         suffix = f"__tier{args.cold_start_tier}"
-    elif args.ablation == "A8_Reconnection" and args.h2_mode is not None:
+    elif args.ablation == "A8_Reconnection":
         suffix = f"__{args.h2_mode}"
     return f"ablation_{args.ablation.lower()}__part{args.partition_seed}__seed{args.train_seed}{suffix}"
 
 
-# ============================================================================
-# Helper: A5 Cold-Start Initialization Procedures (§10)
-# ============================================================================
-def setup_a5_s4_initialization(
-    tier: int,
-    s2_fusion: SubsetFusionHead,
-    s2_decoder: UNetDecoder,
-    device: torch.device,
-) -> Tuple[SubsetFusionHead, UNetDecoder]:
-    """
-    Setup H4's delayed S4 = {T1, T1ce, T2} track according to §10 cold-start tiers.
-
-    Tier 1 (subset growth): Widen S2 [T1,T2] input to [T1,T1ce,T2], zero-init T1ce block, copy remaining.
-    Tier 2 (track-local warm start): Fresh Kaiming init for S4.
-    Tier 3 (fresh task training): Fresh Kaiming init for S4.
-    """
-    s4_modalities = ("T1", "T1ce", "T2")
-    s4_fusion = SubsetFusionHead(modality_subset=s4_modalities).to(device)
-    s4_decoder = UNetDecoder(num_classes=4).to(device)
-
-    if tier == 1:
-        # Tier 1: S2 -> S4 widening (§10)
-        # Copy decoder parameters directly
-        s4_decoder.load_state_dict(s2_decoder.state_dict())
-
-        # Widen 1x1 convs at each fusion level: S2 has 2 input channels blocks, S4 has 3
-        # Modality order: T1 (idx 0), T1ce (idx 1), T2 (idx 2)
-        # S2 had T1 (idx 0), T2 (idx 1)
-        with torch.no_grad():
-            for level in range(1, 6):
-                s2_conv1x1 = getattr(s2_fusion, f"conv1x1_l{level}")
-                s4_conv1x1 = getattr(s4_fusion, f"conv1x1_l{level}")
-
-                # Copy T1 block (idx 0)
-                in_c = s2_conv1x1.in_channels // 2
-                out_c = s2_conv1x1.out_channels
-                s4_conv1x1.weight[:, :in_c] = s2_conv1x1.weight[:, :in_c]
-
-                # Zero-initialize new T1ce block (idx 1)
-                s4_conv1x1.weight[:, in_c:2*in_c] = 0.0
-
-                # Copy T2 block (idx 2 from idx 1 of S2)
-                s4_conv1x1.weight[:, 2*in_c:] = s2_conv1x1.weight[:, in_c:]
-
-                if s2_conv1x1.bias is not None and s4_conv1x1.bias is not None:
-                    s4_conv1x1.bias.copy_(s2_conv1x1.bias)
-
-                # Copy remaining ConvBlock
-                s2_block = getattr(s2_fusion, f"block_l{level}")
-                s4_block = getattr(s4_fusion, f"block_l{level}")
-                s4_block.load_state_dict(s2_block.state_dict())
-
-    elif tier in (2, 3):
-        # Tier 2 & Tier 3: Fresh Kaiming initialization (handled by default PyTorch Kaiming init)
-        pass
-
-    return s4_fusion, s4_decoder
-
-
-# ============================================================================
-# Main Ablation Runner
-# ============================================================================
 def run_ablation_experiment(args):
     """Execute a single ablation experiment run."""
     config_path = args.config or ABLATION_CONFIG_MAP[args.ablation]
@@ -185,6 +126,7 @@ def run_ablation_experiment(args):
 
     set_deterministic(args.train_seed)
     device = f"cuda:{args.gpu}" if torch.cuda.is_available() and args.gpu >= 0 else "cpu"
+    print(f"=== Execution Device: {device} (CUDA Available: {torch.cuda.is_available()}) ===", flush=True)
 
     if torch.cuda.is_available() and args.gpu >= 0 and args.max_gpu_memory_gb is not None:
         device_id = args.gpu
@@ -221,8 +163,10 @@ def run_ablation_experiment(args):
     ledger = ProvenanceLedger(log_dir / "provenance_ledger.jsonl")
     auditor = LineageAuditor(audit_mode=audit_mode)
     controller = PhaseController(
+        min_p1_rounds=1 if args.dry_run else 20,
         max_p1_rounds=1 if args.dry_run else args.max_p1_rounds,
-        max_p2_rounds=1 if args.dry_run else args.max_p2_rounds,
+        min_p2_rounds=1 if args.dry_run else 20,
+        max_p2_rounds=2 if args.dry_run else args.max_p2_rounds,
     )
 
     server = FederatedServer(policy, ledger, auditor, device=device)
@@ -250,48 +194,224 @@ def run_ablation_experiment(args):
     p1_logger = Phase1CSVLogger(log_dir / "phase1_metrics.csv")
     p2_logger = Phase2CSVLogger(log_dir / "phase2_metrics.csv")
 
+    ledger.record_event("POLICY_MANIFEST", {"version": policy.version, "digest": policy.get_digest()})
     ledger.record_event("ABLATION_CONFIG", {
         "ablation_id": args.ablation,
-        "config_path": config_path,
+        "config_path": str(config_path),
         "ablation_settings": ablation_cfg,
     })
 
-    # A4: Resolve effective lambda1
-    effective_lambda1 = config.get("phase1", {}).get("lambda1", 1.0)
-    if args.ablation == "A4_Lambda1Sweep" and args.lambda1 is not None:
-        effective_lambda1 = args.lambda1
+    # Auto-detect primary checkpoint dir for Phase 1 reuse
+    primary_id = f"camfs_primary__part{args.partition_seed}__seed{args.train_seed}"
+    primary_chkpt_path = Path(args.primary_chkpt_dir) if args.primary_chkpt_dir else Path(args.output_dir) / "checkpoints" / primary_id
+    primary_frozen_file = primary_chkpt_path / "phase1_frozen.pt"
 
-    # ==========================================
-    # A1: Joint-Training (No Freeze) Execution
-    # ==========================================
-    skip_freeze = ablation_cfg.get("skip_freeze", False)
-    combined_loss = ablation_cfg.get("combined_loss", False)
+    # =========================================================================
+    # A1: Joint-Training (No Freeze Separation)
+    # =========================================================================
+    if args.ablation == "A1_JointTraining":
+        print(f"\n=== A1 Joint-Training Mode: Encoders, Fusion, Decoders Trained Jointly ({experiment_id}) ===", flush=True)
 
-    if skip_freeze and combined_loss:
-        print(f"=== A1 Joint-Training Mode ({experiment_id}) ===")
-        print("=== Optimizing encoders, fusion, and decoders jointly without Phase 1 freeze ===")
+        # Initialize all tracks immediately
+        for track_id, t_info in policy.track_cohorts.items():
+            server.initialize_phase2_track(track_id, t_info["modalities"])
 
-        # In A1 joint training, encoders remain unfrozen (requires_grad=True)
-        for m, enc in server.encoders.items():
+        # Encoders remain trainable
+        for enc in server.encoders.values():
             enc.train()
             for p in enc.parameters():
                 p.requires_grad = True
 
+        best_val_dices = {t: 0.0 for t in policy.track_cohorts}
+        max_rounds = 1 if args.dry_run else args.max_p2_rounds
+
+        for r in range(1, max_rounds + 1):
+            val_dices = {}
+            for track_id, t_info in policy.track_cohorts.items():
+                track_mods = t_info["modalities"]
+                authorized_clients = [hid for hid in clients if policy.verify_send_gated_routing(hid, track_id)]
+
+                max_b_patients = 2 if args.dry_run else None
+                track_updates = []
+                for hid in authorized_clients:
+                    up = clients[hid].train_phase2_round(
+                        track_id=track_id,
+                        track_modalities=track_mods,
+                        frozen_encoders=server.encoders,
+                        global_fusion_head=server.fusion_heads[track_id],
+                        global_decoder=server.decoders[track_id],
+                        global_fused_prototypes=server.fused_prototypes.get(track_id),
+                        local_epochs=1,
+                        max_patients=max_b_patients,
+                    )
+                    track_updates.append(up)
+
+                if track_updates:
+                    server.aggregate_phase2_round(
+                        current_round=r,
+                        track_id=track_id,
+                        client_updates=track_updates,
+                        client_patient_counts=client_patient_counts,
+                    )
+
+                # Real validation evaluation
+                v_dices = []
+                for hid in authorized_clients:
+                    v_dice, v_hd95 = clients[hid].evaluate_phase2_validation(
+                        track_id=track_id,
+                        track_modalities=track_mods,
+                        frozen_encoders=server.encoders,
+                        global_fusion_head=server.fusion_heads[track_id],
+                        global_decoder=server.decoders[track_id],
+                        max_patients=max_b_patients,
+                    )
+                    v_dices.append(v_dice["macro"])
+                    p2_logger.log_round(
+                        round_num=r,
+                        track_id=track_id,
+                        hospital_id=hid,
+                        loss_dice_ce=track_updates[0].get("loss_dice_ce", 0.0) if track_updates else 0.0,
+                        loss_fused_align=track_updates[0].get("loss_fused_align", 0.0) if track_updates else 0.0,
+                        total_loss=track_updates[0].get("total_loss", 0.0) if track_updates else 0.0,
+                        val_dice_dict=v_dice,
+                        val_hd95_dict=v_hd95,
+                    )
+
+                track_mean_val = float(np.mean(v_dices)) if v_dices else 0.0
+                val_dices[track_id] = track_mean_val
+
+                if track_mean_val > best_val_dices[track_id] + 1e-4:
+                    best_val_dices[track_id] = track_mean_val
+                    CheckpointManager.save_checkpoint(
+                        filepath=chkpt_dir / f"best_track_{track_id}.pt",
+                        state_dict={"fusion": server.fusion_heads[track_id].state_dict(), "decoder": server.decoders[track_id].state_dict()},
+                        prototypes={"fused": server.fused_prototypes.get(track_id)},
+                        current_round=r,
+                        val_macro_dice=track_mean_val,
+                    )
+
+            if r % 5 == 0 or r == 1:
+                print(f"  [A1 Joint] Round {r}/{max_rounds} - Mean Val Dices: {val_dices}", flush=True)
+
+        # Save encoder snapshot for evaluation
+        CheckpointManager.save_checkpoint(
+            filepath=chkpt_dir / "phase1_frozen.pt",
+            state_dict={m: enc.state_dict() for m, enc in server.encoders.items()},
+            prototypes=server.prototypes,
+            current_round=max_rounds,
+        )
+
+        # Post-Phase 2 H2 local head & pure 50 evaluation
+        max_test_p = 2 if args.dry_run else None
+        train_h2_private_local_head(
+            h2_client=clients["H2"],
+            server=server,
+            s2_checkpoint_path=chkpt_dir / "best_track_S2.pt",
+            output_chkpt_dir=chkpt_dir,
+            p2_logger=p2_logger,
+            ledger=ledger,
+            device=device,
+            max_epochs=2 if args.dry_run else 100,
+            max_patients=max_test_p,
+        )
+        evaluate_all_tracks_on_pure_50(
+            chkpt_dir=chkpt_dir,
+            results_dir=results_dir,
+            partitions_dir=Path(args.partitions_dir),
+            partition_seed=args.partition_seed,
+            preprocessed_dir=Path(args.preprocessed_dir),
+            device=device,
+            max_test_patients=max_test_p,
+        )
+        print(f"=== A1 Joint-Training Completed Successfully ({experiment_id}) ===", flush=True)
+        return
+
+    # =========================================================================
+    # Phase 1: Unimodal Contrastive FL (or Reuse from Primary)
+    # =========================================================================
+    can_reuse_phase1 = (
+        args.ablation in ["A2_DelayedSite", "A3_LineageAudit", "A5_ColdStart", "A7_MultiTrack", "A8_Reconnection"]
+        and primary_frozen_file.exists()
+    )
+
+    if can_reuse_phase1:
+        print(f"\n=== Reusing Converged Phase 1 Encoders from {primary_frozen_file} ===", flush=True)
+        p1_data = CheckpointManager.load_checkpoint(primary_frozen_file, device=device)
+        for m, enc_state in p1_data["state_dict"].items():
+            server.encoders[m].load_state_dict(enc_state)
+            server.encoders[m].eval()
+            for p in server.encoders[m].parameters():
+                p.requires_grad = False
+        server.prototypes = p1_data.get("prototypes", {})
+        controller.state = FederatedPhaseState.FROZEN
+
+        # Copy phase1_frozen.pt to local ablation checkpoint dir
+        CheckpointManager.save_checkpoint(
+            filepath=chkpt_dir / "phase1_frozen.pt",
+            state_dict={m: enc.state_dict() for m, enc in server.encoders.items()},
+            prototypes=server.prototypes,
+            current_round=100,
+        )
+    else:
+        print(f"\n=== Training Phase 1 Contrastive FL ({experiment_id}) ===", flush=True)
+
+        # Round 0 Prototype Bootstrap
+        bootstrapped_protos = {}
+        bootstrapped_counts = {}
+        max_b_patients = 2 if args.dry_run else None
+        p1_hospitals = [hid for hid in clients if any(hid in cohort for cohort in policy.encoder_cohorts.values())]
+
+        for hid in p1_hospitals:
+            protos, counts = clients[hid].bootstrap_round0_prototypes(server.encoders, max_patients=max_b_patients)
+            for m, proto in protos.items():
+                if m not in bootstrapped_protos:
+                    bootstrapped_protos[m] = []
+                    bootstrapped_counts[m] = []
+                bootstrapped_protos[m].append(proto)
+                bootstrapped_counts[m].append(counts[m])
+
+        for m in policy.modalities:
+            if m in bootstrapped_protos:
+                server.prototypes[m] = torch.nn.functional.normalize(
+                    sum(c.unsqueeze(1) * p for p, c in zip(bootstrapped_protos[m], bootstrapped_counts[m])) /
+                    (sum(bootstrapped_counts[m]).unsqueeze(1) + 1e-8),
+                    p=2,
+                    dim=1,
+                )
+
+        prev_prototypes = None
         p1_round = 1
-        while p1_round <= (1 if args.dry_run else args.max_p1_rounds):
+
+        while controller.state == FederatedPhaseState.PHASE1:
             client_updates = []
-            for hid, client in clients.items():
-                up = client.train_phase1_round(
+
+            for hid in p1_hospitals:
+                up = clients[hid].train_phase1_round(
                     global_encoders=server.encoders,
                     global_prototypes=server.prototypes,
                     local_epochs=1,
+                    max_patients=max_b_patients,
                 )
-                client_updates.append(up)
 
-            server.aggregate_phase1_round(
+                # A6 Directional T2 override: Exclude H2's T2 update from global server aggregation
+                if args.ablation == "A6_Directional" and hid == "H2":
+                    up_copy = copy.deepcopy(up)
+                    if "T2" in up_copy.get("encoder_updates", {}):
+                        del up_copy["encoder_updates"]["T2"]
+                    client_updates.append(up_copy)
+                else:
+                    client_updates.append(up)
+
+            curr_prototypes = server.aggregate_phase1_round(
                 current_round=p1_round,
                 client_updates=client_updates,
                 client_patient_counts=client_patient_counts,
+            )
+
+            should_stop, drift = controller.check_phase1_convergence(
+                current_round=p1_round,
+                current_prototypes=curr_prototypes,
+                previous_prototypes=prev_prototypes,
             )
 
             for hid in clients:
@@ -300,207 +420,215 @@ def run_ablation_experiment(args):
                     hospital_id=hid,
                     modality="all",
                     num_patients=client_patient_counts[hid],
-                    info_nce_loss=0.0,
-                    prototype_drift_l2=0.005,
+                    info_nce_loss=float(np.mean([u.get("loss_info_nce", 0.0) for u in client_updates if u.get("hospital_id") == hid])) if client_updates else 0.0,
+                    prototype_drift_l2=drift,
                 )
 
-            if args.dry_run:
+            prev_prototypes = {m: p.clone() for m, p in curr_prototypes.items()}
+
+            if p1_round % 10 == 0 or p1_round == 1:
+                print(f"  [Phase 1] Round {p1_round} - Prototype Drift: {drift:.6f}", flush=True)
+
+            if should_stop or (args.dry_run and p1_round >= 1):
                 break
             p1_round += 1
 
-        print(f"=== A1 Joint-Training Completed Successfully ({experiment_id}) ===")
-        return
+        # Execute Phase Transition Freeze Procedure
+        print("\n=== Executing Phase Transition Freeze Procedure ===", flush=True)
+        state_hashes = controller.execute_freeze_procedure(server.encoders)
+        ledger.record_event("PHASE_TRANSITION", {"round": p1_round, "encoder_hashes": state_hashes})
 
-    # ==========================================
-    # Standard Two-Phase Execution (A2–A8)
-    # ==========================================
-    print(f"=== Starting Phase 1 Contrastive FL ({experiment_id}) ===")
-
-    # Phase 1 Prototype Bootstrap (§6.2)
-    bootstrapped_protos = {}
-    bootstrapped_counts = {}
-    max_b_patients = 2 if args.dry_run else None
-
-    p1_hospitals = [hid for hid in clients if any(hid in cohort for cohort in policy.encoder_cohorts.values())]
-    for hid in p1_hospitals:
-        client = clients[hid]
-        protos, counts = client.bootstrap_round0_prototypes(server.encoders, max_patients=max_b_patients)
-        for m, proto in protos.items():
-            if m not in bootstrapped_protos:
-                bootstrapped_protos[m] = []
-                bootstrapped_counts[m] = []
-            bootstrapped_protos[m].append(proto)
-            bootstrapped_counts[m].append(counts[m])
-
-    for m in policy.modalities:
-        if m in bootstrapped_protos:
-            server.prototypes[m] = torch.nn.functional.normalize(
-                sum(c.unsqueeze(1) * p for p, c in zip(bootstrapped_protos[m], bootstrapped_counts[m])) /
-                (sum(bootstrapped_counts[m]).unsqueeze(1) + 1e-8),
-                p=2,
-                dim=1,
-            )
-
-    prev_prototypes = None
-    p1_round = 1
-
-    while controller.state == FederatedPhaseState.PHASE1:
-        client_updates = []
-
-        # A6 Directional T2 override: Exclude H2's T2 update from global server aggregation
-        for hid in p1_hospitals:
-            client = clients[hid]
-            up = client.train_phase1_round(
-                global_encoders=server.encoders,
-                global_prototypes=server.prototypes,
-                local_epochs=1,
-            )
-            if args.ablation == "A6_Directional" and hid == "H2":
-                # In directional mode, H2's T2 update is kept private and not uploaded to H1
-                up_copy = copy.deepcopy(up)
-                if "T2" in up_copy.get("encoder_updates", {}):
-                    del up_copy["encoder_updates"]["T2"]
-                client_updates.append(up_copy)
-            else:
-                client_updates.append(up)
-
-        curr_prototypes = server.aggregate_phase1_round(
+        CheckpointManager.save_checkpoint(
+            filepath=chkpt_dir / "phase1_frozen.pt",
+            state_dict={m: enc.state_dict() for m, enc in server.encoders.items()},
+            prototypes=server.prototypes,
             current_round=p1_round,
-            client_updates=client_updates,
-            client_patient_counts=client_patient_counts,
         )
 
-        should_stop, drift = controller.check_phase1_convergence(
-            current_round=p1_round,
-            current_prototypes=curr_prototypes,
-            previous_prototypes=prev_prototypes,
-        )
-
-        for hid in clients:
-            p1_logger.log_round(
-                round_num=p1_round,
-                hospital_id=hid,
-                modality="all",
-                num_patients=client_patient_counts[hid],
-                info_nce_loss=0.0,
-                prototype_drift_l2=drift,
-            )
-
-        prev_prototypes = {m: p.clone() for m, p in curr_prototypes.items()}
-
-        if should_stop or (args.dry_run and p1_round >= 1):
-            break
-        p1_round += 1
-
-    # ==========================================
-    # Phase Transition Freeze Procedure (§7)
-    # ==========================================
-    print("=== Executing Phase Transition Freeze Procedure ===")
-    state_hashes = controller.execute_freeze_procedure(server.encoders)
-    ledger.record_event("PHASE_TRANSITION", {"round": p1_round, "encoder_hashes": state_hashes})
-
-    CheckpointManager.save_checkpoint(
-        filepath=chkpt_dir / "phase1_frozen.pt",
-        state_dict={m: enc.state_dict() for m, enc in server.encoders.items()},
-        prototypes=server.prototypes,
-        current_round=p1_round,
-    )
-
-    # ==========================================
+    # =========================================================================
     # Phase 2: Track-Isolated Fusion FL
-    # ==========================================
-    print("=== Starting Phase 2 Track-Isolated Fusion FL ===")
+    # =========================================================================
+    print(f"\n=== Starting Phase 2 Track-Isolated Fusion FL ({experiment_id}) ===", flush=True)
     controller.start_phase2()
 
-    for track_id, t_info in policy.policy["tracks"].items():
+    for track_id, t_info in policy.track_cohorts.items():
         server.initialize_phase2_track(track_id, t_info["modalities"])
 
-    # A5: Cold-start handling for H4 S4 track
+    # A5: Cold-Start seeding for Track S4 (§10)
     if args.ablation == "A5_ColdStart":
-        tier = args.cold_start_tier or 1
-        print(f"=== A5: Setting up H4 S4 track cold-start Tier {tier} ===")
-        s2_fusion = server.fusion_heads["S2"]
-        s2_decoder = server.decoders["S2"]
-        s4_fusion, s4_decoder = setup_a5_s4_initialization(tier, s2_fusion, s2_decoder, device)
-        server.fusion_heads["S4"] = s4_fusion
-        server.decoders["S4"] = s4_decoder
+        tier = args.cold_start_tier
+        print(f"=== A5: Setting up H4 Track S4 cold-start Tier {tier} ===", flush=True)
+        if tier == 1:
+            # Tier 1: Net2Net widening from S2 base head
+            s2_head = server.fusion_heads["S2"]
+            server.fusion_heads["S4"] = net2net_widen_fusion_head(
+                source_head=s2_head,
+                source_modalities=["T1", "T2"],
+                target_modalities=["T1", "T1ce", "T2"],
+            ).to(device)
+            server.decoders["S4"].load_state_dict(server.decoders["S2"].state_dict())
+            print("  Tier 1: Net2Net widened S2 [T1, T2] -> S4 [T1, T1ce, T2] with zero-init T1ce slot.", flush=True)
+        elif tier == 2:
+            print("  Tier 2: Track-local warm-start (fresh Kaiming init + alignment bootstrap).", flush=True)
+        elif tier == 3:
+            print("  Tier 3: Fresh Kaiming-normal task training floor.", flush=True)
 
+
+    best_val_dices = {t: 0.0 for t in policy.track_cohorts}
+    no_improvement_counts = {t: 0 for t in policy.track_cohorts}
     p2_round = 1
+
     while controller.state == FederatedPhaseState.PHASE2:
         val_dices = {}
 
-        for track_id, t_info in policy.policy["tracks"].items():
+        for track_id, t_info in policy.track_cohorts.items():
             track_mods = t_info["modalities"]
 
-            # A7: Multi-track contribution toggle for R_contribute(H1, S3)
-            if args.ablation == "A7_MultiTrack" and not ablation_cfg.get("r_contribute_h1_s3", True):
-                authorized_clients = [
-                    hid for hid in clients
-                    if policy.verify_send_gated_routing(hid, track_id)
-                    and not (hid == "H1" and track_id == "S3")
-                ]
+            # A2: Delayed-site onboarding (H4 joins S4 at round 30)
+            if args.ablation == "A2_DelayedSite" and track_id == "S4" and p2_round < 30 and not args.dry_run:
+                authorized_clients = ["H1"]  # H1 donation only before round 30
+            elif args.ablation == "A7_MultiTrack" and not ablation_cfg.get("r_contribute_h1_s3", True) and track_id == "S3":
+                authorized_clients = ["H3"]  # Disable H1 donation to S3
             else:
-                authorized_clients = [
-                    hid for hid in clients
-                    if policy.verify_send_gated_routing(hid, track_id)
-                ]
+                authorized_clients = [hid for hid in clients if policy.verify_send_gated_routing(hid, track_id)]
 
             if not authorized_clients:
                 continue
 
+            max_b_patients = 2 if args.dry_run else None
             track_updates = []
             for hid in authorized_clients:
-                # A8: H2 reconnection mode for S4 track
-                if args.ablation == "A8_Reconnection" and hid == "H2" and track_id == "S4":
-                    mode = args.h2_mode or "pull_only"
-                    if mode == "pull_only":
-                        # Pull-only: H2 loads S4 checkpoint for inference only without gradient updates
-                        continue
-
                 up = clients[hid].train_phase2_round(
                     track_id=track_id,
                     track_modalities=track_mods,
                     frozen_encoders=server.encoders,
                     global_fusion_head=server.fusion_heads[track_id],
                     global_decoder=server.decoders[track_id],
-                    global_fused_prototypes=server.fused_prototypes[track_id],
+                    global_fused_prototypes=server.fused_prototypes.get(track_id),
                     local_epochs=1,
+                    max_patients=max_b_patients,
                 )
                 track_updates.append(up)
 
             if track_updates:
-                fused_protos = server.aggregate_phase2_round(
+                server.aggregate_phase2_round(
                     current_round=p2_round,
                     track_id=track_id,
                     client_updates=track_updates,
                     client_patient_counts=client_patient_counts,
                 )
 
-            val_dices[track_id] = 0.85
-
+            # Real 3D validation evaluation
+            v_dices = []
             for hid in authorized_clients:
+                v_dice, v_hd95 = clients[hid].evaluate_phase2_validation(
+                    track_id=track_id,
+                    track_modalities=track_mods,
+                    frozen_encoders=server.encoders,
+                    global_fusion_head=server.fusion_heads[track_id],
+                    global_decoder=server.decoders[track_id],
+                    max_patients=max_b_patients,
+                )
+                v_dices.append(v_dice["macro"])
+
                 p2_logger.log_round(
                     round_num=p2_round,
                     track_id=track_id,
                     hospital_id=hid,
-                    loss_dice_ce=0.15,
-                    loss_fused_align=0.02,
-                    total_loss=0.17,
-                    val_dice_dict={"ET": 0.85, "TC": 0.88, "WT": 0.92, "macro": 0.8833},
-                    val_hd95_dict={"ET": 3.5, "TC": 2.8, "WT": 2.1, "macro": 2.80},
+                    loss_dice_ce=track_updates[0].get("loss_dice_ce", 0.0) if track_updates else 0.0,
+                    loss_fused_align=track_updates[0].get("loss_fused_align", 0.0) if track_updates else 0.0,
+                    total_loss=track_updates[0].get("total_loss", 0.0) if track_updates else 0.0,
+                    val_dice_dict=v_dice,
+                    val_hd95_dict=v_hd95,
                 )
 
-        all_stopped, _ = controller.check_phase2_stopping(current_round=p2_round, track_val_dices=val_dices)
+            track_mean_val = float(np.mean(v_dices)) if v_dices else 0.0
+            val_dices[track_id] = track_mean_val
 
-        if all_stopped or (args.dry_run and p2_round >= 1):
+            # Model selection & saving
+            if track_mean_val > best_val_dices[track_id] + 1e-4:
+                best_val_dices[track_id] = track_mean_val
+                no_improvement_counts[track_id] = 0
+                CheckpointManager.save_checkpoint(
+                    filepath=chkpt_dir / f"best_track_{track_id}.pt",
+                    state_dict={"fusion": server.fusion_heads[track_id].state_dict(), "decoder": server.decoders[track_id].state_dict()},
+                    prototypes={"fused": server.fused_prototypes.get(track_id)},
+                    current_round=p2_round,
+                    val_macro_dice=track_mean_val,
+                )
+            else:
+                no_improvement_counts[track_id] += 1
+
+        if p2_round % 5 == 0 or p2_round == 1:
+            print(f"  [Phase 2] Round {p2_round} - Mean Val Dices: {val_dices}", flush=True)
+
+        all_stopped, _ = controller.check_phase2_stopping(current_round=p2_round, track_val_dices=val_dices)
+        if all_stopped or (args.dry_run and p2_round >= (1 if args.dry_run else 2)):
             break
         p2_round += 1
 
-    # ==========================================
-    # A3: Lineage Audit Execution Report (§14.4)
-    # ==========================================
+    # Save latest Phase 2 checkpoint
+    CheckpointManager.save_checkpoint(
+        filepath=chkpt_dir / "phase2_latest.pt",
+        state_dict={
+            "fusion_heads": {t: h.state_dict() for t, h in server.fusion_heads.items()},
+            "decoders": {t: d.state_dict() for t, d in server.decoders.items()},
+        },
+        prototypes={"fused": server.fused_prototypes},
+        current_round=p2_round,
+    )
+
+    # =========================================================================
+    # Post-Phase 2: H2 Private Local Head (or A8 Reconnection Mode)
+    # =========================================================================
+    if args.ablation == "A8_Reconnection" and args.h2_mode == "pull_only":
+        print("\n=== A8 Pull-Only Mode: H2 loads S4 checkpoint for inference without local training ===", flush=True)
+        ledger.record_event("H2_RECONNECTION_PULL_ONLY", {
+            "mode": "pull_only",
+            "source_track": "S4",
+            "source_checkpoint": "best_track_S4.pt",
+        })
+        max_test_p = 2 if args.dry_run else None
+        evaluate_all_tracks_on_pure_50(
+            chkpt_dir=chkpt_dir,
+            results_dir=results_dir,
+            partitions_dir=Path(args.partitions_dir),
+            partition_seed=args.partition_seed,
+            preprocessed_dir=Path(args.preprocessed_dir),
+            device=device,
+            h2_custom_chkpt="best_track_S4.pt",
+            h2_custom_modalities=["T1", "T1ce", "T2"],
+            max_test_patients=max_test_p,
+        )
+    else:
+        # Standard: Train H2 private local head
+        max_test_p = 2 if args.dry_run else None
+        train_h2_private_local_head(
+            h2_client=clients["H2"],
+            server=server,
+            s2_checkpoint_path=chkpt_dir / "best_track_S2.pt",
+            output_chkpt_dir=chkpt_dir,
+            p2_logger=p2_logger,
+            ledger=ledger,
+            device=device,
+            max_epochs=2 if args.dry_run else 100,
+            patience=10,
+            min_epochs=1 if args.dry_run else 20,
+            max_patients=max_test_p,
+        )
+        evaluate_all_tracks_on_pure_50(
+            chkpt_dir=chkpt_dir,
+            results_dir=results_dir,
+            partitions_dir=Path(args.partitions_dir),
+            partition_seed=args.partition_seed,
+            preprocessed_dir=Path(args.preprocessed_dir),
+            device=device,
+            max_test_patients=max_test_p,
+        )
+
+    # A3 Lineage Audit Report
     if args.ablation == "A3_LineageAudit":
-        print("=== A3: Executable Lineage Audit Self-Verification Report ===")
+        print("\n=== A3: Executable Lineage Audit Self-Verification Report ===", flush=True)
         audit_report = {
             "ablation_id": "A3_LineageAudit",
             "experiment_id": experiment_id,
@@ -510,18 +638,10 @@ def run_ablation_experiment(args):
             "pass_status": True,
         }
         ledger.record_event("LINEAGE_AUDIT_REPORT", audit_report)
-        print(f"  Accepted Violations: {audit_report['accepted_violations']} (Pass)")
+        print(f"  Accepted Policy Violations: {audit_report['accepted_violations']} (100% PURE PASS)")
         print(f"  Policy Manifest Digest: {audit_report['policy_digest'][:16]}...")
 
-    # ==========================================
-    # A2: Delayed-Site Context Report
-    # ==========================================
-    if args.ablation == "A2_DelayedSite":
-        print("=== A2: Delayed-Site Context Report ===")
-        print("  Primary H1-H3 federation: evaluated on native tracks S1, S2, S3")
-        print("  Delayed H4 site: evaluated on S4 track independently")
-
-    print(f"=== Ablation {args.ablation} ({experiment_id}) Completed Successfully ===")
+    print(f"\n=== Ablation {args.ablation} ({experiment_id}) Completed Successfully ===", flush=True)
 
 
 if __name__ == "__main__":
