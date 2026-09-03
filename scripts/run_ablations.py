@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import argparse
 import copy
+import csv
 import json
 import os
 import sys
@@ -108,6 +109,11 @@ def parse_args():
     # A8-specific
     parser.add_argument("--h2-mode", type=str, default="pull_only", choices=["private_head", "pull_only"],
                         help="H2 reconnection mode for A8 (private_head vs pull_only)")
+    # Resumption support
+    parser.add_argument("--resume", action="store_true", default=True,
+                        help="Auto-resume from existing checkpoints and logs if found (default: True)")
+    parser.add_argument("--no-resume", dest="resume", action="store_false",
+                        help="Disable auto-resuming and restart from Round 1")
     return parser.parse_args()
 
 
@@ -229,8 +235,33 @@ def run_ablation_experiment(args):
 
         best_val_dices = {t: 0.0 for t in policy.track_cohorts}
         max_rounds = 1 if args.dry_run else args.max_p2_rounds
+        start_r = 1
 
-        for r in range(1, max_rounds + 1):
+        if getattr(args, "resume", True):
+            p2_log_file = log_dir / "phase2_metrics.csv"
+            max_logged_r = 0
+            if p2_log_file.exists():
+                with open(p2_log_file, "r", encoding="utf-8") as f:
+                    reader = csv.DictReader(f)
+                    for row in reader:
+                        max_logged_r = max(max_logged_r, int(row.get("round", 0)))
+            tracks_loaded = 0
+            for t in policy.track_cohorts:
+                t_chkpt = chkpt_dir / f"best_track_{t}.pt"
+                if t_chkpt.exists():
+                    data = CheckpointManager.load_checkpoint(t_chkpt, device=device)
+                    server.fusion_heads[t].load_state_dict(data["state_dict"]["fusion"])
+                    server.decoders[t].load_state_dict(data["state_dict"]["decoder"])
+                    if "prototypes" in data and "fused" in data["prototypes"]:
+                        server.fused_prototypes[t] = data["prototypes"]["fused"]
+                    score = data.get("val_macro_dice", 0.0)
+                    best_val_dices[t] = score
+                    tracks_loaded += 1
+            if max_logged_r > 0 and tracks_loaded > 0:
+                start_r = max_logged_r + 1
+                print(f"\n=== [Auto-Resume] Resuming A1 Joint Training from Round {start_r} (Previous Best Macro Dices: {best_val_dices}) ===", flush=True)
+
+        for r in range(start_r, max_rounds + 1):
             val_dices = {}
             for track_id, t_info in policy.track_cohorts.items():
                 track_mods = t_info["modalities"]
@@ -332,16 +363,18 @@ def run_ablation_experiment(args):
         return
 
     # =========================================================================
-    # Phase 1: Unimodal Contrastive FL (or Reuse from Primary)
+    # Phase 1: Unimodal Contrastive FL (or Reuse from Primary / Resumed Local)
     # =========================================================================
+    local_frozen_file = chkpt_dir / "phase1_frozen.pt"
     can_reuse_phase1 = (
-        args.ablation in ["A2_DelayedSite", "A3_LineageAudit", "A5_ColdStart", "A7_MultiTrack", "A8_Reconnection"]
-        and primary_frozen_file.exists()
+        (args.ablation in ["A2_DelayedSite", "A3_LineageAudit", "A5_ColdStart", "A7_MultiTrack", "A8_Reconnection"] and primary_frozen_file.exists())
+        or (getattr(args, "resume", True) and local_frozen_file.exists())
     )
 
     if can_reuse_phase1:
-        print(f"\n=== Reusing Converged Phase 1 Encoders from {primary_frozen_file} ===", flush=True)
-        p1_data = CheckpointManager.load_checkpoint(primary_frozen_file, device=device)
+        source_frozen = local_frozen_file if (getattr(args, "resume", True) and local_frozen_file.exists()) else primary_frozen_file
+        print(f"\n=== Reusing Converged Phase 1 Encoders from {source_frozen} ===", flush=True)
+        p1_data = CheckpointManager.load_checkpoint(source_frozen, device=device)
         for m, enc_state in p1_data["state_dict"].items():
             server.encoders[m].load_state_dict(enc_state)
             server.encoders[m].eval()
@@ -350,13 +383,14 @@ def run_ablation_experiment(args):
         server.prototypes = p1_data.get("prototypes", {})
         controller.state = FederatedPhaseState.FROZEN
 
-        # Copy phase1_frozen.pt to local ablation checkpoint dir
-        CheckpointManager.save_checkpoint(
-            filepath=chkpt_dir / "phase1_frozen.pt",
-            state_dict={m: enc.state_dict() for m, enc in server.encoders.items()},
-            prototypes=server.prototypes,
-            current_round=100,
-        )
+        # Copy phase1_frozen.pt to local ablation checkpoint dir if not already there
+        if source_frozen != local_frozen_file:
+            CheckpointManager.save_checkpoint(
+                filepath=local_frozen_file,
+                state_dict={m: enc.state_dict() for m, enc in server.encoders.items()},
+                prototypes=server.prototypes,
+                current_round=100,
+            )
     else:
         print(f"\n=== Training Phase 1 Contrastive FL ({experiment_id}) ===", flush=True)
 
@@ -483,7 +517,39 @@ def run_ablation_experiment(args):
     no_improvement_counts = {t: 0 for t in policy.track_cohorts}
     p2_round = 1
 
-    while controller.state == FederatedPhaseState.PHASE2:
+    # Auto-resumption check for Phase 2
+    if getattr(args, "resume", True):
+        p2_log_file = log_dir / "phase2_metrics.csv"
+        max_logged_r = 0
+        if p2_log_file.exists():
+            with open(p2_log_file, "r", encoding="utf-8") as f:
+                reader = csv.DictReader(f)
+                for row in reader:
+                    max_logged_r = max(max_logged_r, int(row.get("round", 0)))
+
+        tracks_loaded = 0
+        for t in policy.track_cohorts:
+            t_chkpt = chkpt_dir / f"best_track_{t}.pt"
+            if t_chkpt.exists():
+                data = CheckpointManager.load_checkpoint(t_chkpt, device=device)
+                server.fusion_heads[t].load_state_dict(data["state_dict"]["fusion"])
+                server.decoders[t].load_state_dict(data["state_dict"]["decoder"])
+                if "prototypes" in data and "fused" in data["prototypes"]:
+                    server.fused_prototypes[t] = data["prototypes"]["fused"]
+                score = data.get("val_macro_dice", 0.0)
+                best_val_dices[t] = score
+                controller.p2_best_val_dice[t] = score
+                tracks_loaded += 1
+
+        if max_logged_r > 0 and tracks_loaded > 0:
+            p2_round = max_logged_r + 1
+            print(f"\n=== [Auto-Resume] Resuming Phase 2 from Round {p2_round} ===", flush=True)
+            print(f"  Loaded {tracks_loaded} track checkpoints from {chkpt_dir}", flush=True)
+            print(f"  Restored Best Validation Macro Dices: {best_val_dices}\n", flush=True)
+
+    max_p2_rounds = 1 if args.dry_run else args.max_p2_rounds
+
+    while controller.state == FederatedPhaseState.PHASE2 and p2_round <= max_p2_rounds:
         val_dices = {}
 
         for track_id, t_info in policy.track_cohorts.items():
