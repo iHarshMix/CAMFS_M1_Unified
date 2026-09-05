@@ -539,6 +539,7 @@ def run_ablation_experiment(args):
                 score = data.get("val_macro_dice", 0.0)
                 best_val_dices[t] = score
                 controller.p2_best_val_dice[t] = score
+                controller.p2_no_improvement_count[t] = 0
                 tracks_loaded += 1
 
         if max_logged_r > 0 and tracks_loaded > 0:

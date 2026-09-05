@@ -203,6 +203,8 @@ class PhaseController:
                 self.p2_no_improvement_count[track_id] = 0
                 per_track_improved[track_id] = True
             else:
+                if track_id not in self.p2_no_improvement_count:
+                    self.p2_no_improvement_count[track_id] = 0
                 best_dice = self.p2_best_val_dice[track_id]
                 # Check improvement threshold (> 1e-4)
                 if val_dice > best_dice + self.p2_improvement_threshold:
@@ -217,7 +219,7 @@ class PhaseController:
             # Check if this track should stop
             track_stopped = False
             if current_round >= self.min_p2_rounds:
-                if self.p2_no_improvement_count[track_id] >= self.p2_patience:
+                if self.p2_no_improvement_count.get(track_id, 0) >= self.p2_patience:
                     track_stopped = True
 
             if current_round >= self.max_p2_rounds:
