@@ -1,0 +1,74 @@
+# CAMFS M2 CDRD — Configuration File
+# Implements §16 of the CAMFS M2 Specification
+
+experiment:
+  name: "m2_cdrd_e4"
+  partition_seed: 1103
+  train_seed: 17
+  split_seed: 42
+  condition: "E4"
+  gpu: 0
+  precision: "fp32"
+
+paths:
+  preprocessed_dir: "outputs/preprocessed"
+  partitions_dir: "outputs/partitions"
+  m1_checkpoint_dir: "outputs/checkpoints/camfs_primary__part1103__seed17"
+  phase1_checkpoint: "outputs/checkpoints/camfs_primary__part1103__seed17/phase1_frozen.pt"
+  track_s3_checkpoint: "outputs/checkpoints/camfs_primary__part1103__seed17/best_track_S3.pt"
+  h3_test_patients: "outputs/partitions/h3_test_patients.json"
+  output_dir: "outputs/m2_cdrd"
+  ledger_path: "outputs/provenance/m2_cdrd_ledger.jsonl"
+
+splits:
+  h1:
+    train_count: 102
+    val_count: 13
+    release_audit_count: 12
+  h3:
+    m1_train_count: 52
+    m2_cal_count: 6
+    m2_accept_val_count: 6
+    sacred_test_count: 50
+
+teacher:
+  lr: 3.0e-4
+  weight_decay: 1.0e-4
+  batch_size: 16
+  max_epochs: 50
+  patience: 10
+  improvement_threshold: 1.0e-4
+  calibration:
+    num_grid_points: 201
+    t_min: 0.25
+    t_max: 8.0
+    seed: 6601
+    max_voxels: 1000000
+  viability:
+    bootstrap_resamples: 10000
+    bootstrap_seed: 7701
+    non_inferiority_delta: 0.02
+    et_confidence_threshold: 0.90
+
+adapter:
+  projection_width: 16
+  lr: 1.0e-3
+  weight_decay: 1.0e-4
+  batch_size: 16
+  max_epochs: 30
+  patience: 7
+  improvement_threshold: 1.0e-4
+  lambda_seg: 1.0
+  lambda_kd: 1.0
+  lambda_delta: 0.1
+  lambda_tv: 1.0e-5
+  kd_temperature: 2.0
+
+calibration:
+  lr: 1.0e-2
+  weight_decay: 0.0
+  batch_size: 16
+  epochs: 50
+  gate_init: -4.0
+  acceptance:
+    non_inferiority_delta: 0.02
