@@ -6,7 +6,8 @@
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
 #SBATCH --gres=gpu:1
-#SBATCH --time=12:00:00
+#SBATCH --partition=h100
+#SBATCH --time=03:59:00
 #SBATCH --mem=64G
 
 # Navigate to project root
