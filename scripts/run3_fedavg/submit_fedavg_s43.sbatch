@@ -1,0 +1,33 @@
+#!/bin/bash
+#SBATCH --job-name=fedavg_s43
+#SBATCH --output=outputs/logs/slurm_fedavg_s43_%j.out
+#SBATCH --error=outputs/logs/slurm_fedavg_s43_%j.err
+#SBATCH --nodes=1
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task=8
+#SBATCH --gres=gpu:ugpg_3g47gb:1
+#SBATCH --partition=h100
+#SBATCH --time=03:59:00
+#SBATCH --mem=64G
+
+# Set working directory to project root
+cd /home/harshyadav/Research/CAMFS/CAMFS_M1_Unified
+
+# Environment initialization
+mkdir -p outputs/logs outputs/checkpoints outputs/results
+
+SEED=43
+
+echo "=== [Slurm Job: fedavg_s43 | Seed: $SEED | JobID: $SLURM_JOB_ID] ==="
+echo "=== Host: $(hostname) | GPU: $CUDA_VISIBLE_DEVICES ==="
+nvidia-smi
+
+# Activate conda environment
+source /home/shared/miniconda/etc/profile.d/conda.sh
+conda activate camfs
+
+# Execute dedicated FedAvg runner
+python scripts/run3_fedavg/run_fedavg.py \
+  --partition-seed 1103 \
+  --train-seed $SEED \
+  --gpu 0
