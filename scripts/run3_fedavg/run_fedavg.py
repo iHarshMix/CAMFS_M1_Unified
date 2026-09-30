@@ -329,8 +329,10 @@ def run_fedavg() -> None:
     client_samplers: Dict[str, SliceSampler] = {}
 
     for hid in hospitals:
-        tr_pids = partition_data[hid]["train_patient_ids"]
-        val_pids = partition_data[hid]["val_patient_ids"]
+        all_hospital_pids = partition_data["hospitals"][hid]["patient_ids"]
+        n_val = max(1, int(len(all_hospital_pids) * 0.2)) if len(all_hospital_pids) > 1 else 0
+        tr_pids = all_hospital_pids[:-n_val] if n_val > 0 else all_hospital_pids
+        val_pids = all_hospital_pids[-n_val:] if n_val > 0 else all_hospital_pids
 
         if args.dry_run:
             tr_pids = tr_pids[:2]
