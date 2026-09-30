@@ -1,0 +1,515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Widget 1: Unimodal Encoder Alignment & Stabilization (Phase 1)</title>
+<!-- KaTeX LaTeX Math Rendering -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js" onload="renderLaTeX();"></script>
+<style>
+  :root {
+    --color-bg: #ffffff;
+    --color-text: #1f2937;
+    --color-muted: #4b5563;
+    --color-border: #e5e7eb;
+    --color-card-bg: #f9fafb;
+    --pip-active: #1d9e75;
+    --pip-done: #059669;
+    --pip-bg: #d1d5db;
+    --green-bg: #e1f5ee; --green-text: #085041; --green-border: #5dcaa5;
+    --red-bg: #faece7; --red-text: #993c1d; --red-border: #f0997b;
+    --blue-bg: #e6f1fb; --blue-text: #0c447c; --blue-border: #85b7eb;
+    --amber-bg: #faeeda; --amber-text: #633806; --amber-border: #ef9f27;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-bg: #111827;
+      --color-text: #f9fafb;
+      --color-muted: #9ca3af;
+      --color-border: #374151;
+      --color-card-bg: #1f2937;
+      --pip-active: #10b981;
+      --pip-done: #059669;
+      --pip-bg: #4b5563;
+      --green-bg: #064e3b; --green-text: #a7f3d0; --green-border: #059669;
+      --red-bg: #7f1d1d; --red-text: #fca5a5; --red-border: #dc2626;
+      --blue-bg: #1e3a8a; --blue-text: #bfdbfe; --blue-border: #2563eb;
+      --amber-bg: #78350f; --amber-text: #fde68a; --amber-border: #d97706;
+    }
+  }
+  body {
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    padding: 24px;
+  }
+  .stepper {
+    background: var(--color-bg);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 880px;
+    margin: 0 auto;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  }
+  .nav-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  .progress-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .pip {
+    height: 6px;
+    flex: 1;
+    background: var(--pip-bg);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .pip.active { background: var(--pip-active); }
+  .pip.done { background: var(--pip-done); }
+  .card {
+    background: var(--color-card-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 1.15em;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .intro-box {
+    background: rgba(0,0,0,0.02);
+    border-left: 4px solid var(--pip-active);
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin-bottom: 14px;
+    font-size: 0.95em;
+    line-height: 1.55;
+  }
+  .intro-title {
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: var(--pip-active);
+    text-transform: uppercase;
+    font-size: 0.82em;
+    letter-spacing: 0.5px;
+  }
+  .muted { color: var(--color-muted); font-size: 0.95em; line-height: 1.55; }
+  .math-block {
+    background: rgba(0,0,0,0.03);
+    border: 1px solid var(--color-border);
+    padding: 14px 16px;
+    border-radius: 6px;
+    margin: 12px 0;
+    font-size: 0.95em;
+    line-height: 1.6;
+  }
+  table.feature-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 0.9em;
+  }
+  table.feature-table th, table.feature-table td {
+    border: 1px solid var(--color-border);
+    padding: 8px 12px;
+    text-align: left;
+  }
+  table.feature-table th {
+    background: rgba(0,0,0,0.04);
+    font-weight: 600;
+  }
+  .highlight-box {
+    background: var(--blue-bg); color: var(--blue-text); border-left: 4px solid var(--blue-border);
+    padding: 12px 16px; border-radius: 4px; margin-top: 14px; font-size: 0.92em; line-height: 1.5;
+  }
+  .highlight-green {
+    background: var(--green-bg); color: var(--green-text); border-left: 4px solid var(--green-border);
+    padding: 12px 16px; border-radius: 4px; margin-top: 14px; font-size: 0.92em; line-height: 1.5;
+  }
+  .highlight-warn {
+    background: var(--red-bg); color: var(--red-text); border-left: 4px solid var(--red-border);
+    padding: 12px 16px; border-radius: 4px; margin-top: 14px; font-size: 0.92em; line-height: 1.5;
+  }
+  .btn-group { display: flex; justify-content: space-between; gap: 12px; }
+  button {
+    padding: 9px 20px;
+    border-radius: 6px;
+    border: 1px solid var(--color-border);
+    background: var(--color-card-bg);
+    color: var(--color-text);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  button:hover:not(:disabled) { background: var(--color-border); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<div class="stepper">
+  <div class="progress-bar" id="progress"></div>
+  <div class="nav-header">
+    <div>
+      <span id="step-num" style="font-weight: 700; color: var(--pip-active);">Step 1 / 8</span>
+      <h3 id="step-title" style="margin: 4px 0 0 0;">Header Title</h3>
+    </div>
+    <div class="btn-group">
+      <button id="prev-btn" onclick="move(-1)">Previous</button>
+      <button id="next-btn" onclick="move(1)">Next</button>
+    </div>
+  </div>
+
+  <div id="step-body"></div>
+</div>
+
+<script>
+const steps = [
+  {
+    title: "Running Example Initialization & BraTS Standardization",
+    body: `
+      <div class="card">
+        <div class="intro-box">
+          <div class="intro-title">Intuition & Purpose</div>
+          What are we doing here? In federated medical imaging, hospitals must process incoming MRI scans without centralizing patient data. Before any neural network layers touch the images, we must define the client's governance profile ($O(i), \\text{Send}(i), \\text{Recv}(i)$) and standardize input image dimensions across the federation.
+        </div>
+
+        <div class="card-title">Setup: Hospital 2 (Patch Star Case) & BraTS Native Dimensions</div>
+        <p class="muted">Hospital 2 loads Patient Sample #042 for Phase 1 unimodal training. In the official BraTS benchmark, 3D NIfTI MRI volumes have native axial dimensions of <strong>240 × 240 pixels</strong>. Hospital 2 owns 3 MRI modalities locally ($O(2) = \\{\\text{T1, T1ce, T2}\\}$). FLAIR is missing because Hospital 2 lacks a FLAIR scanner.</p>
+        
+        <div class="math-block">
+          <strong>INPUT TENSOR SHAPES (Patient #042 — Standard BraTS Slices):</strong><br>
+          • $x_{\\text{T1}} \\in \\mathbb{R}^{1 \\times 240 \\times 240}$ &nbsp;(Present — Native Grayscale Slice)<br>
+          • $x_{\\text{T1ce}} \\in \\mathbb{R}^{1 \\times 240 \\times 240}$ &nbsp;(Present — Native Grayscale Slice)<br>
+          • $x_{\\text{T2}} \\in \\mathbb{R}^{1 \\times 240 \\times 240}$ &nbsp;(Present — Native Grayscale Slice)<br>
+          • $x_{\\text{FLAIR}}$ : <code>[NOT PRESENT]</code> &nbsp;<span style="color: var(--red-text);">(IDLE / Unused)</span>
+        </div>
+
+        <div class="highlight-box">
+          <strong>BraTS & SOTA Standardization ($1 \\to 256$ Channels):</strong> Mapping 1 raw input channel to 256 latent channels matches MICCAI baselines (e.g., <strong>FedAMM</strong> and <strong>FedProto</strong>) 1:1. It provides a 256-dimensional feature space ($\\mathbb{R}^{256}$) where cosine similarity easily separates the 4 ground-truth classes $[c=0 \\text{ (BG)}, c=1 \\text{ (NCR/NET)}, c=2 \\text{ (ED)}, c=4 \\text{ (ET)}]$ into distinct clusters.
+        </div>
+        <div class="highlight-warn">
+          <strong>Modality Masking Rule:</strong> $\\text{Encoder}_{\\text{FLAIR}}$ is marked IDLE for Hospital 2. It receives 0 forward passes, 0 backward passes, and 0 gradient updates.
+        </div>
+      </div>
+    `
+  },
+  {
+    title: "Unimodal Encoder Bank Forward Pass & Feature Map Progression",
+    body: `
+      <div class="card">
+        <div class="intro-box">
+          <div class="intro-title">Intuition & Purpose</div>
+          Why trade spatial size for channels? A single pixel intensity value (1 channel) cannot distinguish complex tumor tissue from healthy brain. Convolutional blocks downsample the spatial grid ($240 \\to 120 \\to 60 \\to 30 \\to 15$) while expanding channels ($1 \\to 32 \\to 64 \\to 128 \\to 256$), transforming spatial pixels into high-level semantic feature concepts.
+        </div>
+
+        <div class="card-title">Layer-by-Layer Feature Map Progression & Information Conservation</div>
+        <p class="muted">Each available modality is fed into its dedicated 4-stage U-Net encoder. Crucially, during Phase 1, there are NO fusion heads or decoders in the computation graph. Each stage trades spatial resolution for semantic channel depth.</p>
+        
+        <table class="feature-table">
+          <thead>
+            <tr>
+              <th>Stage / Layer</th>
+              <th>Input Shape</th>
+              <th>Convolutional Operations</th>
+              <th>Output Feature Map Shape</th>
+              <th>Extracted Feature Type</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Input</strong></td>
+              <td>—</td>
+              <td>Raw 2D MRI Slice</td>
+              <td>$1 \\times 240 \\times 240$</td>
+              <td>Raw pixel intensity values</td>
+            </tr>
+            <tr>
+              <td><strong>Stage 1</strong></td>
+              <td>$1 \\times 240 \\times 240$</td>
+              <td>2× Conv3x3 (1 → 32) + Pool2x2</td>
+              <td>$32 \\times 120 \\times 120$</td>
+              <td>Edges, intensity gradients, local noise</td>
+            </tr>
+            <tr>
+              <td><strong>Stage 2</strong></td>
+              <td>$32 \\times 120 \\times 120$</td>
+              <td>2× Conv3x3 (32 → 64) + Pool2x2</td>
+              <td>$64 \\times 60 \\times 60$</td>
+              <td>Anatomical borders, skull boundaries</td>
+            </tr>
+            <tr>
+              <td><strong>Stage 3</strong></td>
+              <td>$64 \\times 60 \\times 60$</td>
+              <td>2× Conv3x3 (64 → 128) + Pool2x2</td>
+              <td>$128 \\times 30 \\times 30$</td>
+              <td>Tumor mass shape, edema boundaries</td>
+            </tr>
+            <tr>
+              <td><strong>Stage 4 (Bottleneck)</strong></td>
+              <td>$128 \\times 30 \\times 30$</td>
+              <td>2× Conv3x3 (128 → 256) + Pool2x2</td>
+              <td>$\\mathbf{256 \\times 15 \\times 15}$</td>
+              <td>Global semantic tissue identities $[c=0 \\text{ (BG)}, c=1 \\text{ (NCR)}, c=2 \\text{ (ED)}, c=4 \\text{ (ET)}]$</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="math-block">
+          <strong>FORWARD PASS BOTTLENECK OUTPUTS:</strong><br>
+          • $z_{\\text{T1}} = \\text{Encoder}_{\\text{T1}}(x_{\\text{T1}}) \\implies \\mathbb{R}^{256 \\times 15 \\times 15}$<br>
+          • $z_{\\text{T1ce}} = \\text{Encoder}_{\\text{T1ce}}(x_{\\text{T1ce}}) \\implies \\mathbb{R}^{256 \\times 15 \\times 15}$<br>
+          • $z_{\\text{T2}} = \\text{Encoder}_{\\text{T2}}(x_{\\text{T2}}) \\implies \\mathbb{R}^{256 \\times 15 \\times 15}$<br>
+          • $z_{\\text{FLAIR}} = \\text{IDLE} \\implies \\text{No Computation}$
+        </div>
+
+        <div class="highlight-green">
+          <strong>The "Information Conservation" Math Trick:</strong><br>
+          - Raw Input Volume: $1 \\times 240 \\times 240 = \\mathbf{57,600 \\text{ values}}$<br>
+          - Bottleneck Volume: $256 \\times 15 \\times 15 = \\mathbf{57,600 \\text{ values}}$<br>
+          The encoder does not destroy data — it reorganizes 57,600 spatial pixels into 57,600 semantic features (225 spatial regions $\\times$ 256 feature concept channels per region)!
+        </div>
+
+        <div class="highlight-box">
+          <strong>Key Insight (Flaw 8 Resolution):</strong> Because fusion heads do not exist yet, $z_{\\text{T1}}$ cannot interact with $z_{\\text{T1ce}}$. Cross-modal gradient contamination is structurally impossible during Phase 1.
+        </div>
+      </div>
+    `
+  },
+  {
+    title: "Downsampled GT Mask & Pixel Sampling P_m^c",
+    body: `
+      <div class="card">
+        <div class="intro-box">
+          <div class="intro-title">How Class Buckets Are Made per Modality</div>
+          <strong>For each specific modality $m$, we create 4 spatial coordinate buckets corresponding to the 4 ground-truth classes:</strong> $[c=0 \\text{ (BG)}, c=1 \\text{ (NCR/NET)}, c=2 \\text{ (ED)}, c=4 \\text{ (ET)}]$.<br><br>
+          • The raw $240 \\times 240$ mask is downsampled to $15 \\times 15$.<br>
+          • The 225 grid coordinates of $z_m$ are placed into their matching class coordinate bucket $P_m^c$.<br>
+          • <strong>Total Prototypes Across Federation:</strong> $4 \\text{ Modalities} \\times 4 \\text{ Class Buckets} = \\mathbf{4 \\times 4 = 16 \\text{ Prototype Vectors}}$ in $\\mathbb{R}^{256}$!
+        </div>
+
+        <div class="card-title">Spatial Feature Sampling $P_m^c$</div>
+        <p class="muted">To align features without fusion decoders, ground-truth segmentation masks $y$ ($240 \\times 240$) are downsampled to the bottleneck resolution ($15 \\times 15$). Grid positions $p \\in \\{ (0,0), \\dots, (14,14) \\}$ are categorized into 4 class buckets $P_m^c$.</p>
+        
+        <div class="math-block">
+          <strong>225 GRID POSITIONS SORTED INTO 4 GROUND-TRUTH CLASS BUCKETS $|P_m^c|$:</strong><br>
+          • <strong>Bucket $P_m^{c=0}$ [Background BG]:</strong> $|P_m^{c=0}| = 145$ grid positions &nbsp;<span class="muted">(e.g., $p = (0,0), (0,1)$ in healthy brain/air)</span><br>
+          • <strong>Bucket $P_m^{c=1}$ [Necrotic Core NCR/NET]:</strong> $|P_m^{c=1}| = 30$ grid positions &nbsp;<span class="muted">(e.g., $p = (7,7), (7,8)$ inside necrotic core)</span><br>
+          • <strong>Bucket $P_m^{c=2}$ [Peritumoral Edema ED]:</strong> $|P_m^{c=2}| = 35$ grid positions &nbsp;<span class="muted">(e.g., $p = (6,8), (6,9)$ in fluid edema region)</span><br>
+          • <strong>Bucket $P_m^{c=4}$ [Enhancing Tumor ET]:</strong> $|P_m^{c=4}| = 15$ grid positions &nbsp;<span class="muted">(e.g., $p = (8,8), (8,9)$ in active tumor rim)</span>
+        </div>
+
+        <div class="highlight-green">
+          <strong>Why This Step Is Crucial:</strong><br>
+          1. <strong>Step 4 (Prototypes):</strong> Uses $P_m^c$ to calculate the average vector $\\text{Proto}_m^c = \\frac{1}{|P_m^c|} \\sum_{p \\in P_m^c} z_m(p)$ for each class bucket.<br>
+          2. <strong>Step 5 (InfoNCE Loss):</strong> Uses $P_m^c$ to pull vectors $z_m(p)$ toward their matching class prototype $\\text{Proto}_m^{c(p)}$ while pushing them away from other class prototypes!
+        </div>
+      </div>
+    `
+  },
+  {
+    title: "Local Class Prototype Centroid Computation",
+    body: `
+      <div class="card">
+        <div class="intro-box">
+          <div class="intro-title">Intuition & Metric Intro</div>
+          What is a "Prototype"? A class prototype $\\text{Proto}_{m,i}^{c}$ is a single 256-dimensional vector representing the average feature signature of ground-truth class $c \\in \\{0, 1, 2, 4\\}$ in modality $m$. Taking the spatial mean over all positions in $P_m^c$ strips away spatial coordinates and isolates pure tissue feature identity in $\\mathbb{R}^{256}$.
+        </div>
+
+        <div class="card-title">Local Centroid Estimation $\\text{Proto}_{m,2}^c$</div>
+        <p class="muted">Hospital 2 computes local prototype centroid vectors for each ground-truth class $c$ by taking the spatial mean of bottleneck embeddings at positions belonging to class $c$.</p>
+        
+        $$ \\text{Proto}_{m,2}^{c,t} = \\frac{1}{|P_m^c|} \\sum_{p \\in P_m^c} z_m(p) $$
+
+        <div class="math-block">
+          <strong>Concrete Output Vectors in $\\mathbb{R}^{256}$ by Ground-Truth Class $c$:</strong><br>
+          • $\\text{Proto}_{\\text{T1}, 2}^{c=1 \\text{ [NCR/NET]}}$ : Mean of 30 vectors in $z_{\\text{T1}} \\implies \\mathbb{R}^{256}$<br>
+          • $\\text{Proto}_{\\text{T1ce}, 2}^{c=4 \\text{ [ET]}}$ &nbsp;&nbsp;&nbsp;&nbsp;: Mean of 15 vectors in $z_{\\text{T1ce}} \\implies \\mathbb{R}^{256}$<br>
+          • $\\text{Proto}_{\\text{T2}, 2}^{c=2 \\text{ [ED]}}$ &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;: Mean of 35 vectors in $z_{\\text{T2}} \\implies \\mathbb{R}^{256}$
+        </div>
+
+        <div class="highlight-box">
+          <strong>Audit Resolution (Flaw 3):</strong> Prototypes are computed at exact bottleneck spatial positions matching downsampled ground-truth masks.
+        </div>
+      </div>
+    `
+  },
+  {
+    title: "InfoNCE Unimodal Alignment Loss Computation",
+    body: `
+      <div class="card">
+        <div class="intro-box">
+          <div class="intro-title">Plain-English Purpose & Shared Feature Language Magic</div>
+          <strong>YES! THIS IS THE MAIN GOAL OF PHASE 1:</strong><br>
+          By pulling feature vectors $z_m(p)$ toward their class prototypes across all modalities during federated aggregation, the server forces all 4 unimodal prototypes for class $c$ into the exact same region of $\\mathbb{R}^{256}$:<br>
+          $$ \\text{Proto}_{\\text{T1}}^{c=1} \\approx \\text{Proto}_{\\text{T1ce}}^{c=1} \\approx \\text{Proto}_{\\text{T2}}^{c=1} \\approx \\text{Proto}_{\\text{FLAIR}}^{c=1} \\in \\mathbb{R}^{256} $$
+          • <strong>Positive Pair Rule:</strong> Formed when prototype class index $c$ matches grid location label $c(p) \\implies \\left( z_m(p), \\text{Proto}_m^{c(p)} \\right)$.<br>
+          • <strong>Result:</strong> All 4 encoders ($\text{T1, T1ce, T2, FLAIR}$) learn to speak the <strong>exact same 256-D feature language</strong> for all 4 classes!
+        </div>
+
+        <div class="card-title">Local Alignment Loss $\\mathcal{L}_{\\text{unimodal-align}}$</div>
+        <p class="muted">Each encoder is optimized via InfoNCE contrastive loss against global prototypes. Positive pairs (matching GT class $c$) are pulled together; negative pairs (other GT classes) are pushed apart.</p>
+        
+        $$ \\mathcal{L}_{\\text{unimodal-align}}(z_m) = -\\frac{1}{|P_m|} \\sum_{p \\in P_m} \\log \\frac{\\exp\\left(\\text{sim}(z_m(p), \\text{Proto}_m^{c(p)}) / \\tau\\right)}{\\sum_{c'=1}^{C_{\\text{cls}}} \\exp\\left(\\text{sim}(z_m(p), \\text{Proto}_m^{c'}) / \\tau\\right)} $$
+
+        <div class="math-block">
+          <strong>NUMERICAL EXAMPLE (Position $p=(7,7)$ with GT Class $c=1$ [NCR/NET]):</strong><br>
+          • <strong>POSITIVE PAIR:</strong> $\\text{sim}(z_{\\text{T1}}(p=(7,7)), \\text{Proto}_{\\text{T1}}^{c=1 \\text{ [NCR]}}) = 0.85$ &nbsp;<span style="color: var(--green-text); font-weight: 600;">(Matched Class $c=1$ — Pulled Together!)</span><br>
+          • 🔴 Negative Pair 1 ($c=0$ [BG]) &nbsp;: $\\text{sim}(z_{\\text{T1}}(p), \\text{Proto}_{\\text{T1}}^{c=0 \\text{ [BG]}}) = 0.12$<br>
+          • 🔴 Negative Pair 2 ($c=2$ [ED]) &nbsp;: $\\text{sim}(z_{\\text{T1}}(p), \\text{Proto}_{\\text{T1}}^{c=2 \\text{ [ED]}}) = 0.20$<br>
+          • 🔴 Negative Pair 3 ($c=4$ [ET]) &nbsp;: $\\text{sim}(z_{\\text{T1}}(p), \\text{Proto}_{\\text{T1}}^{c=4 \\text{ [ET]}}) = 0.05$<br><br>
+          $$\\text{InfoNCE Softmax Probability} = \\frac{e^{0.85/0.1}}{e^{0.85/0.1} + e^{0.12/0.1} + e^{0.20/0.1} + e^{0.05/0.1}} = \\frac{4914.7}{4927.05} = 0.9975$$
+          $$\\text{Position Loss } \\ell(p) = -\\log(0.9975) = 0.0025$$
+          $$\\mathcal{L}_2^{\\text{Phase 1}} = \\lambda_1 \\left[ \\mathcal{L}_{\\text{align}}(\\text{T1}) + \\mathcal{L}_{\\text{align}}(\\text{T1ce}) + \\mathcal{L}_{\\text{align}}(\\text{T2}) \\right] = 0.5 \\times [0.421 + 0.380 + 0.450] = 0.6255$$
+        </div>
+
+        <div class="highlight-green">
+          <strong>The Shared Language Guarantee:</strong> Because Phase 1 forces $\text{Proto}_{\text{T1}}^{c=1} \approx \text{Proto}_{\text{T1ce}}^{c=1} \approx \text{Proto}_{\text{T2}}^{c=1} \approx \text{Proto}_{\text{FLAIR}}^{c=1}$, all unimodal encoders project features into the same region of $\mathbb{R}^{256}$. When Phase 2 begins, fusion heads can instantly fuse any subset of modalities!
+        </div>
+      </div>
+    `
+  },
+  {
+    title: "Local Encoder Parameter Gradient Computation",
+    body: `
+      <div class="card">
+        <div class="intro-box">
+          <div class="intro-title">Intuition & Metric Intro</div>
+          Why check gradient norms? $\\frac{\\partial \\mathcal{L}}{\\partial \\theta}$ measures how much an encoder's weights change during backpropagation. We must verify that $\\text{Encoder}_{\\text{T1}}$ receives gradient ONLY from T1 loss, proving complete unimodal isolation.
+        </div>
+
+        <div class="card-title">Backpropagation & Gradient Isolation</div>
+        <p class="muted">Backpropagation calculates gradients strictly through unimodal encoder parameters $\\theta_{E_m}$.</p>
+        
+        <div class="math-block">
+          <strong>GRADIENT COMPUTATION STATUS:</strong><br>
+          • $\\frac{\\partial \\mathcal{L}}{\\partial \\theta_{\\text{Encoder}_{\\text{T1}}}}$ &nbsp;&nbsp;: <strong>COMPUTED</strong> &nbsp;(Norm $\|\\nabla_{\\text{T1}}\| = 1.24$)<br>
+          • $\\frac{\\partial \\mathcal{L}}{\\partial \\theta_{\\text{Encoder}_{\\text{T1ce}}}}$ : <strong>COMPUTED</strong> &nbsp;(Norm $\|\\nabla_{\\text{T1ce}}\| = 1.15$)<br>
+          • $\\frac{\\partial \\mathcal{L}}{\\partial \\theta_{\\text{Encoder}_{\\text{T2}}}}$ &nbsp;&nbsp;: <strong>COMPUTED</strong> &nbsp;(Norm $\|\\nabla_{\\text{T2}}\| = 1.31$)<br>
+          • $\\frac{\\partial \\mathcal{L}}{\\partial \\theta_{\\text{Encoder}_{\\text{FLAIR}}}}$ : <code>NONE</code> (0.00 — Modality missing)<br>
+          • $\\frac{\\partial \\mathcal{L}}{\\partial \\theta_{\\text{FusionHead}}}$ &nbsp;&nbsp;: <strong>DOES NOT EXIST</strong> (Not in graph)
+        </div>
+
+        <div class="highlight-box">
+          <strong>Gradient Purity Check:</strong> $\\theta_{E_{\\text{T1}}}$ receives gradients ONLY from T1 loss. It is completely isolated from T1ce and T2 signals.
+        </div>
+      </div>
+    `
+  },
+  {
+    title: "Server Federated Aggregation & Prototype Update",
+    body: `
+      <div class="card">
+        <div class="intro-box">
+          <div class="intro-title">Intuition & Metric Intro</div>
+          Why Evidence-Weighted Prototype Aggregation? Standard FedAvg weights updates by client patient count $n_i/N$. But for rare tumor classes (like Enhancing Tumor $c=4$ ET), a hospital with more ET tumor pixels should have more say in defining the global ET prototype vector. Evidence weighting $w_{m,i}^c = \\frac{|P_{m,i}^c|}{\\sum_k |P_{m,k}^c|}$ guarantees rare tumor prototypes are accurate.
+        </div>
+
+        <div class="card-title">Evidence-Weighted Aggregation</div>
+        <p class="muted">Hospital 2 uploads its updated encoders and local prototypes to the server. The server aggregates updates gated by $R_{\\text{send}}$ and $R_{\\text{recv}}$ policy matrices.</p>
+        
+        $$ \\theta_{E_{\\text{T1}}}^{t+1} = \\sum_{j:\\, R_{\\text{send}}(j,\\text{T1})=1} \\frac{n_j}{N_{\\text{T1}}} \\theta_{E_{\\text{T1}}, j}^t $$
+
+        <div class="math-block">
+          <strong>EVIDENCE-WEIGHTED PROTOTYPE AGGREGATION (Class $c=1$ [NCR/NET]):</strong><br>
+          $$ \\text{Proto}_{\\text{T1}}^{c=1, t+1} = \\sum_j \\left[ \\frac{|P_{\\text{T1}, j}^{c=1}|}{\\sum_k |P_{\\text{T1}, k}^{c=1}|} \\right] \\text{Proto}_{\\text{T1}, j}^{c=1, t} $$
+          For Hospital 2: $|P_{\\text{T1}, 2}^{c=1}| = 30$ points out of Total 100 points across federation:<br>
+          $$\\text{Weight}_{H2} = \\frac{30}{100} = 30.0\\% \\text{ contribution to } \\text{Proto}_{\\text{T1}}^{c=1}$$
+        </div>
+
+        <div class="highlight-green">
+          <strong>Server Update Complete:</strong> Global prototype bank updated and ready for prototype drift evaluation.
+        </div>
+      </div>
+    `
+  },
+  {
+    title: "Phase 1 Round Completion & State Output",
+    body: `
+      <div class="card">
+        <div class="intro-box">
+          <div class="intro-title">Intuition & Metric Intro</div>
+          What is Prototype Drift? $\\text{Drift}_t$ measures how much global class prototype vectors change from round $t-1$ to round $t$ across all 4 modalities and 4 ground-truth classes $[c=0 \\text{ (BG)}, c=1 \\text{ (NCR)}, c=2 \\text{ (ED)}, c=4 \\text{ (ET)}]$. High drift means representations are still shifting; low drift ($\text{Drift}_t < \\epsilon = 0.0100$) means unimodal encoders have stabilized and are ready to be frozen permanently!
+        </div>
+
+        <div class="card-title">Phase Controller Drift Evaluation</div>
+        <p class="muted">At the end of Round $t=25$, the Phase Controller evaluates global prototype drift across all 4 modalities and 4 ground-truth classes.</p>
+        
+        $$ \\text{Drift}_t = \\frac{1}{4 C_{\\text{cls}}} \\sum_{m \\in \\mathcal{M}} \\sum_{c \\in \\{0,1,2,4\\}} \\left\| \\text{Proto}_m^{c, t} - \\text{Proto}_m^{c, t-1} \\right\|_2 $$
+
+        <div class="math-block">
+          <strong>DRIFT COMPUTATION AT ROUND $t=25$:</strong><br>
+          $$\\text{Drift}_{25} = 0.0084$$
+          $$\\text{Threshold } \\epsilon = 0.0100$$
+          $$\\text{Status: } \\text{Drift}_{25} < \\epsilon \\quad (\\text{Condition met for 3rd consecutive round } K=3)$$
+        </div>
+
+        <div class="highlight-green">
+          <strong>PHASE 1 COMPLETE:</strong> Phase Controller triggers the 5-step Freeze Procedure (Widget 2) to lock unimodal encoders permanently.
+        </div>
+      </div>
+    `
+  }
+];
+
+let cur = 0;
+const N = steps.length;
+
+function renderLaTeX() {
+  if (window.renderMathInElement) {
+    renderMathInElement(document.getElementById('step-body'), {
+      delimiters: [
+        {left: '$$', right: '$$', display: true},
+        {left: '$', right: '$', display: false},
+        {left: '\\(', right: '\\)', display: false},
+        {left: '\\[', right: '\\]', display: true}
+      ],
+      ignoredTags: ["script", "noscript", "style", "textarea"],
+      throwOnError: false
+    });
+  }
+}
+
+function render() {
+  document.getElementById('step-num').textContent = `Step ${cur+1} / ${N}`;
+  document.getElementById('step-title').textContent = steps[cur].title;
+  document.getElementById('step-body').innerHTML = steps[cur].body;
+  document.getElementById('prev-btn').disabled = cur === 0;
+  document.getElementById('next-btn').disabled = cur === N-1;
+  
+  const prog = document.getElementById('progress');
+  prog.innerHTML = '';
+  for (let i = 0; i < N; i++) {
+    const p = document.createElement('div');
+    p.className = 'pip' + (i < cur ? ' done' : '') + (i === cur ? ' active' : '');
+    p.onclick = () => { cur = i; render(); };
+    prog.appendChild(p);
+  }
+
+  renderLaTeX();
+}
+
+function move(d) {
+  cur = Math.max(0, Math.min(N-1, cur+d));
+  render();
+  document.querySelector('.stepper').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+render();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,440 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Widget 3: Send-Gated Track Routing & Aggregation (Phase 2)</title>
+<!-- KaTeX LaTeX Math Rendering -->
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.css">
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/katex.min.js"></script>
+<script defer src="https://cdn.jsdelivr.net/npm/katex@0.16.8/dist/contrib/auto-render.min.js" onload="renderLaTeX();"></script>
+<style>
+  :root {
+    --color-bg: #ffffff;
+    --color-text: #1f2937;
+    --color-muted: #4b5563;
+    --color-border: #e5e7eb;
+    --color-card-bg: #f9fafb;
+    --pip-active: #1d9e75;
+    --pip-done: #059669;
+    --pip-bg: #d1d5db;
+    --green-bg: #e1f5ee; --green-text: #085041; --green-border: #5dcaa5;
+    --red-bg: #faece7; --red-text: #993c1d; --red-border: #f0997b;
+    --blue-bg: #e6f1fb; --blue-text: #0c447c; --blue-border: #85b7eb;
+    --amber-bg: #faeeda; --amber-text: #633806; --amber-border: #ef9f27;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --color-bg: #111827;
+      --color-text: #f9fafb;
+      --color-muted: #9ca3af;
+      --color-border: #374151;
+      --color-card-bg: #1f2937;
+      --pip-active: #10b981;
+      --pip-done: #059669;
+      --pip-bg: #4b5563;
+      --green-bg: #064e3b; --green-text: #a7f3d0; --green-border: #059669;
+      --red-bg: #7f1d1d; --red-text: #fca5a5; --red-border: #dc2626;
+      --blue-bg: #1e3a8a; --blue-text: #bfdbfe; --blue-border: #2563eb;
+      --amber-bg: #78350f; --amber-text: #fde68a; --amber-border: #d97706;
+    }
+  }
+  body {
+    background: var(--color-bg);
+    color: var(--color-text);
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    margin: 0;
+    padding: 24px;
+  }
+  .stepper {
+    background: var(--color-bg);
+    color: var(--color-text);
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: 24px;
+    max-width: 880px;
+    margin: 0 auto;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+  }
+  .nav-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  .progress-bar {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 20px;
+  }
+  .pip {
+    height: 6px;
+    flex: 1;
+    background: var(--pip-bg);
+    border-radius: 3px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+  .pip.active { background: var(--pip-active); }
+  .pip.done { background: var(--pip-done); }
+  .card {
+    background: var(--color-card-bg);
+    border: 1px solid var(--color-border);
+    border-radius: 8px;
+    padding: 18px;
+    margin-bottom: 16px;
+  }
+  .card-title {
+    font-size: 1.15em;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .intro-box {
+    background: rgba(0,0,0,0.02);
+    border-left: 4px solid var(--pip-active);
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin-bottom: 14px;
+    font-size: 0.95em;
+    line-height: 1.55;
+  }
+  .intro-title {
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: var(--pip-active);
+    text-transform: uppercase;
+    font-size: 0.82em;
+    letter-spacing: 0.5px;
+  }
+  .muted { color: var(--color-muted); font-size: 0.95em; line-height: 1.55; }
+  .math-block {
+    background: rgba(0,0,0,0.03);
+    border: 1px solid var(--color-border);
+    padding: 14px 16px;
+    border-radius: 6px;
+    margin: 12px 0;
+    font-size: 0.95em;
+    line-height: 1.6;
+  }
+  table.feature-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-top: 10px;
+    font-size: 0.9em;
+  }
+  table.feature-table th, table.feature-table td {
+    border: 1px solid var(--color-border);
+    padding: 8px 12px;
+    text-align: left;
+  }
+  table.feature-table th {
+    background: rgba(0,0,0,0.04);
+    font-weight: 600;
+  }
+  .highlight-box {
+    background: var(--blue-bg); color: var(--blue-text); border-left: 4px solid var(--blue-border);
+    padding: 12px 16px; border-radius: 4px; margin-top: 14px; font-size: 0.92em; line-height: 1.5;
+  }
+  .highlight-green {
+    background: var(--green-bg); color: var(--green-text); border-left: 4px solid var(--green-border);
+    padding: 12px 16px; border-radius: 4px; margin-top: 14px; font-size: 0.92em; line-height: 1.5;
+  }
+  .highlight-warn {
+    background: var(--red-bg); color: var(--red-text); border-left: 4px solid var(--red-border);
+    padding: 12px 16px; border-radius: 4px; margin-top: 14px; font-size: 0.92em; line-height: 1.5;
+  }
+  .btn-group { display: flex; justify-content: space-between; gap: 12px; }
+  button {
+    padding: 9px 20px;
+    border-radius: 6px;
+    border: 1px solid var(--color-border);
+    background: var(--color-card-bg);
+    color: var(--color-text);
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  button:hover:not(:disabled) { background: var(--color-border); }
+  button:disabled { opacity: 0.4; cursor: not-allowed; }
+</style>
+</head>
+<body>
+
+<div class="stepper">
+  <div class="progress-bar" id="progress"></div>
+  <div class="nav-header">
+    <div>
+      <span id="step-num" style="font-weight: 700; color: var(--pip-active);">Step 1 / 8</span>
+      <h3 id="step-title" style="margin: 4px 0 0 0;">Header Title</h3>
+    </div>
+    <div class="btn-group">
+      <button id="prev-btn" onclick="move(-1)">Previous</button>
+      <button id="next-btn" onclick="move(1)">Next</button>
+    </div>
+  </div>
+
+  <div id="step-body"></div>
+</div>
+
+<script>
+const steps = [
+  {
+    title: "Hospital 2 Governance Profile & Modality Discrepancy (The Patch Problem)",
+    body: `
+      <div class="card">
+        <div class="intro-box">
+          <div class="intro-title">Intuition & Purpose (The Patch Problem)</div>
+          In pure Method 2, a client's track key was defined by its <em>owned</em> modalities $O(i)$. But Hospital 2 owns 3 modalities $O(2) = \\{\\text{T1, T1ce, T2}\\}$ while restricting transmission of $\\text{T1ce}$ ($\\text{Send}(2) = \\{\\text{T1, T2}\\}$). Pure Method 2 failed because it tried to force Hospital 2 to upload a $\\text{T1ce}$ track.<br><br>
+          <strong>The Patch Solution:</strong> CAMFS re-keys Hospital 2's public federated track key to match its declared send consent: $S_2' = \\text{Send}(2) = \\{\\text{T1, T2}\\}$.
+        </div>
+
+        <div class="card-title">Hospital 2 Governance & Consent Profile</div>
+        <p class="muted">Hospital 2 loads Patient #042 during Phase 2 Track-Isolated Fusion Training.</p>
+
+        <div class="math-block">
+          <strong>GOVERNANCE SET DEFINITIONS:</strong><br>
+          • <strong>Owned Modalities:</strong> $O(2) = \\{\\text{T1, T1ce, T2}\\}$ &nbsp;<span class="muted">(Present in local scanner lab)</span><br>
+          • <strong>Send Consent:</strong> $\\text{Send}(2) = \\{\\text{T1, T2}\\}$ &nbsp;<span style="color: var(--red-text); font-weight: 600;">(T1ce transmission RESTRICTED by IRB)</span><br>
+          • <strong>Receive Permission:</strong> $\\text{Recv}(2) = \\{\\text{T1, T1ce, T2}\\}$<br>
+          • <strong>Re-keyed Public Federated Track:</strong> $S_2' = \\text{Send}(2) = \\mathbf{\\{\\text{T1, T2}\\}}$
+        </div>
+
+        <div class="highlight-box">
+          <strong>Key Patch Innovation:</strong> Public track identity $S_2'$ is keyed by $\\text{Send}(2)$, NOT $O(2)$. Hospital 2 will contribute strictly to Track $S_2' = \\{\\text{T1, T2}\\}$.
+        </div>
+      </div>
+    `
+  },
+  {
+    title: "Frozen Unimodal Feature Extraction & detach() Wall",
+    body: `
+      <div class="card">
+        <div class="intro-box">
+          <div class="intro-title">Intuition & Purpose</div>
+          Hospital 2 feeds Patient #042 MRI slices ($x_{\\text{T1}}, x_{\\text{T1ce}}, x_{\\text{T2}}$) into its frozen, locked unimodal encoders ($\\theta_{E_m}^*$). The output embeddings are immediately detached, ensuring zero gradient flow back to the encoders.
+        </div>
+
+        <div class="card-title">Frozen Unimodal Encoder Forward Pass</div>
+        <p class="muted">Features are extracted through frozen encoders and detached into static leaf tensors in $\\mathbb{R}^{256 \\times 15 \\times 15}$.</p>
+
+        <div class="math-block">
+          <strong>FROZEN BOTTLENECK EMBEDDING OUTPUTS:</strong><br>
+          • $z_{\\text{T1}} = \\text{detach}(\\text{Encoder}_{\\text{T1}}^*(x_{\\text{T1}})) \\implies \\mathbb{R}^{256 \\times 15 \\times 15}$ &nbsp;<span class="muted">(Leaf Tensor)</span><br>
+          • $z_{\\text{T1ce}} = \\text{detach}(\\text{Encoder}_{\\text{T1ce}}^*(x_{\\text{T1ce}})) \\implies \\mathbb{R}^{256 \\times 15 \\times 15}$ &nbsp;<span class="muted">(Leaf Tensor — Kept Private)</span><br>
+          • $z_{\\text{T2}} = \\text{detach}(\\text{Encoder}_{\\text{T2}}^*(x_{\\text{T2}})) \\implies \\mathbb{R}^{256 \\times 15 \\times 15}$ &nbsp;<span class="muted">(Leaf Tensor)</span>
+        </div>
+
+        <div class="highlight-green">
+          <strong>Shared Feature Language Ready:</strong> All 3 embeddings $z_{\\text{T1}}, z_{\\text{T1ce}}, z_{\\text{T2}}$ are aligned in $\\mathbb{R}^{256}$ and ready for fusion!
+        </div>
+      </div>
+    `
+  },
+  {
+    title: "Public Federated Track S2' Forward Pass (T1, T2 Fusion)",
+    body: `
+      <div class="card">
+        <div class="intro-box">
+          <div class="intro-title">Intuition & Purpose</div>
+          To participate in federated learning without breaking consent, Hospital 2 inputs ONLY its consented features ($z_{\\text{T1}}$ and $z_{\\text{T2}}$) into the public Track $S_2'$ fusion head and decoder. $\\text{T1ce}$ is completely excluded from this public graph!
+        </div>
+
+        <div class="card-title">Public Track $S_2' = \{\\text{T1, T2}\}$ Forward Pass</div>
+        <p class="muted">Hospital 2 executes the forward pass for the federated $\{\\text{T1, T2}\}$ model.</p>
+
+        $$ z_{S_2'} = \\text{FusionHead}_{S_2'}(z_{\\text{T1}}, z_{\\text{T2}}) \\in \\mathbb{R}^{256 \\times 15 \\times 15} $$
+        $$ \\hat{y}_{S_2'} = \\text{Decoder}_{S_2'}(z_{S_2'}) \\in \\mathbb{R}^{4 \\times 240 \\times 240} $$
+
+        <div class="math-block">
+          <strong>PUBLIC GRAPH COMPLIANCE CHECK:</strong><br>
+          • Modalities inside Public Graph: $\\text{T1}, \\text{T2}$ ONLY.<br>
+          • Modalities excluded from Public Graph: $\\text{T1ce}$ &nbsp;<span style="color: var(--pip-active); font-weight: 600;">(100% ABSENT)</span>
+        </div>
+
+        <div class="highlight-box">
+          <strong>Consent Preserved:</strong> Track $S_2'$ contains zero parameter or activation trace of $\\text{T1ce}$.
+        </div>
+      </div>
+    `
+  },
+  {
+    title: "Private Local Head Forward Pass (The Patch Local Benefit)",
+    body: `
+      <div class="card">
+        <div class="intro-box">
+          <div class="intro-title">Intuition & Purpose (The Local Benefit)</div>
+          Why should Hospital 2 waste its local $\\text{T1ce}$ scanner? It shouldn't! Hospital 2 trains a <strong>Private Local Decoder</strong> inside its own hospital walls that fuses $z_{\\text{T1}}, z_{\\text{T2}}$, AND local $z_{\\text{T1ce}}$. Hospital 2 gets maximum Enhancing Tumor (ET) segmentation accuracy for its local patients!
+        </div>
+
+        <div class="card-title">Private Local Head Forward Pass</div>
+        <p class="muted">Hospital 2 fuses all 3 locally owned features for internal clinical diagnostics.</p>
+
+        $$ z_{\\text{local}} = \\text{FusionHead}_{\\text{local}}(z_{\\text{T1}}, z_{\\text{T1ce}}, z_{\\text{T2}}) \\in \\mathbb{R}^{256 \\times 15 \\times 15} $$
+        $$ \\hat{y}_{\\text{local}} = \\text{Decoder}_{\\text{local}}(z_{\\text{local}}) \\in \\mathbb{R}^{4 \\times 240 \\times 240} $$
+
+        <div class="highlight-green">
+          <strong>Best of Both Worlds:</strong> Hospital 2 gets top local clinical accuracy on ET tumor regions while strictly withholding $\\text{T1ce}$ parameters from the global server.
+        </div>
+      </div>
+    `
+  },
+  {
+    title: "Phase 2 Combined Loss & Backpropagation",
+    body: `
+      <div class="card">
+        <div class="intro-box">
+          <div class="intro-title">Intuition & Purpose</div>
+          Evaluating Phase 2 loss. Task loss $\\mathcal{L}_{\\text{task}}$ (Dice + Cross-Entropy) and fused prototype alignment loss $\\mathcal{L}_{\\text{fusion-align}}$ update $\\text{FusionHead}_{S_2'}$ and $\\text{Decoder}_{S_2'}$. Gradients hit the <code>detach()</code> wall and stop!
+        </div>
+
+        <div class="card-title">Phase 2 Loss Computation at Hospital 2</div>
+        <p class="muted">Loss is calculated on public prediction $\\hat{y}_{S_2'}$ against ground-truth mask $y$ over the 4 dataset classes $[c=0 \\text{ (BG)}, c=1 \\text{ (NCR)}, c=2 \\text{ (ED)}, c=4 \\text{ (ET)}]$.</p>
+
+        $$ \\mathcal{L}_2^{\\text{Phase 2}} = \\mathcal{L}_{\\text{task}}(y, \\hat{y}_{S_2'}) + \\lambda_2 \\mathcal{L}_{\\text{fusion-align}}(z_{S_2'}) $$
+
+        <div class="math-block">
+          <strong>GRADIENT BACKPROPAGATION DESTINATIONS:</strong><br>
+          • $\\frac{\\partial \\mathcal{L}}{\\partial \\theta_{F_{S_2'}}}$ &nbsp;&nbsp;: <strong>UPDATED</strong> &nbsp;(Norm = $1.42$ — Public Track Fusion Head)<br>
+          • $\\frac{\\partial \\mathcal{L}}{\\partial \\theta_{D_{S_2'}}}$ &nbsp;&nbsp;: <strong>UPDATED</strong> &nbsp;(Norm = $1.85$ — Public Track Decoder)<br>
+          • $\\frac{\\partial \\mathcal{L}}{\\partial \\theta_{E_m}^*}$ &nbsp;&nbsp;: <strong>0.000000</strong> &nbsp;<span style="color: var(--pip-active); font-weight: 600;">(Blocked by detach() wall)</span>
+        </div>
+
+        <div class="highlight-box">
+          <strong>Clean Separation:</strong> Public track parameters update cleanly without touching frozen unimodal encoders.
+        </div>
+      </div>
+    `
+  },
+  {
+    title: "Send-Gated Upload Filtering (R_send_track)",
+    body: `
+      <div class="card">
+        <div class="intro-box">
+          <div class="intro-title">Intuition & Purpose</div>
+          When Hospital 2 uploads model deltas to the server, the client-side gateway enforces the Send-Gated Track Filter $R_{\\text{send}}^{\\text{track}}(2, S')$. Only deltas for Track $S_2' = \\{\\text{T1, T2}\\}$ are transmitted. Private local head deltas are blocked locally.
+        </div>
+
+        <div class="card-title">Hospital 2 Transmission Payload Audit</div>
+        <p class="muted">Client-side governance filter checks outgoing parameter payload.</p>
+
+        <div class="math-block">
+          <strong>OUTGOING TRANSMISSION PAYLOAD CHECK:</strong><br>
+          • Track $S_2' = \\{\\text{T1, T2}\\}$ Deltas $(\\Delta \\theta_{F_{S_2'}}, \\Delta \\theta_{D_{S_2'}})$ : <strong>TRANSMITTED</strong> &nbsp;($R_{\\text{send}}^{\\text{track}} = 1$)<br>
+          • Private Local Head Deltas $(\\Delta \\theta_{\\text{local}})$ : <code>BLOCKED LOCALLY</code> &nbsp;($R_{\\text{send}}^{\\text{track}} = 0$)<br>
+          • Unimodal Encoder Deltas ($\\Delta \\theta_{E_m}$) : <code>NONE / ZERO</code> &nbsp;(Frozen)
+        </div>
+
+        <div class="highlight-green">
+          <strong>Auditable Transmission:</strong> The server receives strictly Track $S_2'$ fusion parameters containing zero $\\text{T1ce}$ signal.
+        </div>
+      </div>
+    `
+  },
+  {
+    title: "Server Send-Gated Track S2' Aggregation",
+    body: `
+      <div class="card">
+        <div class="intro-box">
+          <div class="intro-title">Clarification: Track Names vs. Hospital IDs</div>
+          <strong>Why is Hospital 4 listed under Track $S_2'$?</strong><br>
+          • <strong>Track $S_2'$ is the $\{\\text{T1, T2}\}$ Modality Track</strong> (it is NOT named after Hospital 2!). The prime symbol $S_2'$ denotes the 2-modality subset $\{\\text{T1, T2}\}$.<br>
+          • Both <strong>Hospital 2</strong> ($\text{Send}(2)=\{\text{T1, T2}\}$) AND <strong>Hospital 4</strong> ($\text{Send}(4)=\{\text{T1, T1ce, T2}\}$, contributing to $S_2'$ via $R_{\\text{contribute}}$) run the $\{\text{T1, T2}\}$ track model.<br>
+          • The server aggregates updates from BOTH hospitals to produce the updated global Track $S_2' = \{\text{T1, T2}\}$ model!
+        </div>
+
+        <div class="card-title">Federated Aggregation Equation for Track $S_2' = \{\text{T1, T2}\}$</div>
+        <p class="muted">The server computes sample-weighted FedAvg across all hospitals contributing to Track $S_2'$:</p>
+
+        $$ \\theta_{\\text{FusionHead}_{S_2'}}^{t+1} = \\frac{n_2}{n_2 + n_4} \\theta_{F_{S_2'}, 2}^t + \\frac{n_4}{n_2 + n_4} \\theta_{F_{S_2'}, 4}^t $$
+
+        <div class="math-block">
+          <strong>FEDERATED TRACK PARTICIPANTS FOR TRACK $S_2' = \{\text{T1, T2}\}$:</strong><br>
+          • <strong>Hospital 2:</strong> $n_2 = 100$ patient samples &nbsp;(Weight = $50.0\\%$) &nbsp;[Send = $\{\\text{T1, T2}\}$ — Public Track $S_2'$]<br>
+          • <strong>Hospital 4:</strong> $n_4 = 100$ patient samples &nbsp;(Weight = $50.0\\%$) &nbsp;[Send = $\{\\text{T1, T1ce, T2}\}$ — Contributes to Track $S_2'$ via $R_{\\text{contribute}}$]
+        </div>
+
+        <div class="highlight-box">
+          <strong>Purity Guaranteed:</strong> Track $S_2'$ is a shared $\{\text{T1, T2}\}$ track model serving all $\{\text{T1, T2}\}$ clients across the federation with zero $\text{T1ce}$ leakage.
+        </div>
+      </div>
+    `
+  },
+  {
+    title: "Phase 2 Evaluation Metrics (WT, TC, ET & Compliance Gap)",
+    body: `
+      <div class="card">
+        <div class="intro-box">
+          <div class="intro-title">Intuition & Final Evaluation</div>
+          Evaluating segmentation results. Hospital 2 is evaluated on the 3 standard BraTS clinical sub-regions: Whole Tumor (WT), Tumor Core (TC), and Enhancing Tumor (ET).
+        </div>
+
+        <div class="card-title">Hospital 2 Final Performance vs. Compliance Summary</div>
+        <p class="muted">Comparing Hospital 2's public track $S_2'$ performance vs. its private local head performance.</p>
+
+        <div class="math-block">
+          <strong>HOSPITAL 2 SEGMENTATION RESULTS (Dice DSC %):</strong><br>
+          • <strong>Public Track $S_2' = \\{\\text{T1, T2}\\}$:</strong> $\\text{Dice}_{\\text{WT}} = 88.5\\%$, $\\text{Dice}_{\\text{TC}} = 81.2\\%$, $\\text{Dice}_{\\text{ET}} = 62.1\\%$ &nbsp;<span class="muted">(No T1ce input)</span><br>
+          • <strong>Private Local Head (Patch):</strong> $\\text{Dice}_{\\text{WT}} = 89.2\\%$, $\\text{Dice}_{\\text{TC}} = 85.8\\%$, $\\text{Dice}_{\\text{ET}} = \\mathbf{78.4\\%}$ &nbsp;<span style="color: var(--green-text); font-weight: 600;">(+16.3% ET Boost locally!)</span><br><br>
+          $$\\text{Compliance-Performance Gap } \\Delta_{\\text{compliance}} = \\text{Dice}_{\\text{Oracle}} - \\text{Dice}_{\\text{CAMFS}} = 89.5\\% - 89.2\\% = \\mathbf{0.3\\%}$$
+        </div>
+
+        <div class="highlight-green">
+          <strong>CAMFS SUCCESS:</strong> Hospital 2 achieves 100% consent compliance, zero cross-modal leakage to the server, and high local ET segmentation accuracy!
+        </div>
+      </div>
+    `
+  }
+];
+
+let cur = 0;
+const N = steps.length;
+
+function renderLaTeX() {
+  if (window.renderMathInElement) {
+    try {
+      renderMathInElement(document.getElementById('step-body'), {
+        delimiters: [
+          {left: '$$', right: '$$', display: true},
+          {left: '$', right: '$', display: false},
+          {left: '\\(', right: '\\)', display: false},
+          {left: '\\[', right: '\\]', display: true}
+        ],
+        ignoredTags: ["script", "noscript", "style", "textarea"],
+        throwOnError: false
+      });
+    } catch(e) {
+      console.warn("KaTeX render notice:", e);
+    }
+  }
+}
+
+function render() {
+  document.getElementById('step-num').textContent = `Step ${cur+1} / ${N}`;
+  document.getElementById('step-title').textContent = steps[cur].title;
+  document.getElementById('step-body').innerHTML = steps[cur].body;
+  document.getElementById('prev-btn').disabled = cur === 0;
+  document.getElementById('next-btn').disabled = cur === N-1;
+  
+  const prog = document.getElementById('progress');
+  prog.innerHTML = '';
+  for (let i = 0; i < N; i++) {
+    const p = document.createElement('div');
+    p.className = 'pip' + (i < cur ? ' done' : '') + (i === cur ? ' active' : '');
+    p.onclick = () => { cur = i; render(); };
+    prog.appendChild(p);
+  }
+
+  renderLaTeX();
+}
+
+function move(d) {
+  cur = Math.max(0, Math.min(N-1, cur+d));
+  render();
+  document.querySelector('.stepper').scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+render();
+</script>
+
+</body>
+</html>

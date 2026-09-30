@@ -5,7 +5,7 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=8
-#SBATCH --gres=gpu:1
+#SBATCH --gres=gpu:ugpg_3g47gb:1
 #SBATCH --partition=h100
 #SBATCH --time=03:59:00
 #SBATCH --mem=64G
