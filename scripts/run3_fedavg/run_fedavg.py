@@ -75,7 +75,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="RUN-3: Compliant FedAvg Baseline")
     parser.add_argument("--partition-seed", type=int, default=1103, help="Data partition seed (default: 1103)")
     parser.add_argument("--train-seed", type=int, default=17, help="Training randomness seed (default: 17)")
-    parser.add_argument("--batch-size", type=int, default=4, help="Batch size for training and slice inference")
+    parser.add_argument("--batch-size", type=int, default=16, help="Batch size for training and slice inference (default: 16)")
     parser.add_argument("--lr", type=float, default=3e-4, help="Learning rate for local AdamW optimizer (default: 3e-4)")
     parser.add_argument("--max-rounds", type=int, default=100, help="Maximum federated communication rounds (default: 100)")
     parser.add_argument("--min-rounds", type=int, default=20, help="Minimum rounds before early stopping (default: 20)")
@@ -139,6 +139,7 @@ def train_client_round(
     max_rounds: int,
     local_epochs: int = 1,
     dry_run: bool = False,
+    vol_cache: Optional[Dict[str, Dict]] = None,
 ) -> Tuple[Dict[str, torch.Tensor], float]:
     """
     Execute 1 round of local training at a hospital client.
@@ -166,7 +167,8 @@ def train_client_round(
         samples = samples[:batch_size]
 
     total_batches = (len(samples) + batch_size - 1) // batch_size
-    vol_cache: Dict[str, Dict] = {}
+    if vol_cache is None:
+        vol_cache = {}
     total_loss = 0.0
     valid_batches = 0
 
@@ -251,6 +253,7 @@ def evaluate_client_validation(
     device: torch.device,
     batch_size: int,
     evaluator: PatientEvaluator,
+    vol_cache: Optional[Dict[str, Dict]] = None,
 ) -> Dict[str, float]:
     """
     Evaluate global model on a hospital's validation cohort.
@@ -261,7 +264,12 @@ def evaluate_client_validation(
 
     with torch.no_grad():
         for pid in val_pids:
-            vol = dataset.load_patient_volume(pid)
+            if vol_cache is not None and pid in vol_cache:
+                vol = vol_cache[pid]
+            else:
+                vol = dataset.load_patient_volume(pid)
+                if vol_cache is not None:
+                    vol_cache[pid] = vol
             lab_vol = vol["labels"]
             num_slices = lab_vol.shape[0]
 
@@ -409,6 +417,13 @@ def run_fedavg() -> None:
     t_start = time.time()
     print(f"\n--- Starting Compliant FedAvg Training: Rounds {start_round} to {max_rounds} ---", flush=True)
 
+    # Set PyTorch threads to utilize high-core node (up to 96 vCPUs)
+    torch.set_num_threads(16)
+    torch.backends.cudnn.benchmark = True
+
+    # Persistent in-memory patient volume cache across all rounds
+    global_vol_cache: Dict[str, Dict] = {}
+
     for r_idx in range(start_round, max_rounds + 1):
         round_t0 = time.time()
         client_updates = {}
@@ -431,6 +446,7 @@ def run_fedavg() -> None:
                 max_rounds=max_rounds,
                 local_epochs=args.local_epochs,
                 dry_run=args.dry_run,
+                vol_cache=global_vol_cache,
             )
             client_updates[hid] = local_state
             client_losses[hid] = c_loss
@@ -451,6 +467,7 @@ def run_fedavg() -> None:
                 device=device,
                 batch_size=args.batch_size,
                 evaluator=evaluator,
+                vol_cache=global_vol_cache,
             )
             hosp_val_metrics[hid] = v_res
 
