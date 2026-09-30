@@ -137,6 +137,7 @@ def train_client_round(
     round_idx: int,
     max_rounds: int,
     local_epochs: int = 1,
+    dry_run: bool = False,
 ) -> Tuple[Dict[str, torch.Tensor], float]:
     """
     Execute 1 round of local training at a hospital client.
@@ -145,75 +146,95 @@ def train_client_round(
     local_model = copy.deepcopy(global_model).to(device)
     local_model.train()
 
+    # Cosine annealing LR schedule across communication rounds
+    eta_min = 1e-6
+    round_lr = eta_min + 0.5 * (lr - eta_min) * (1.0 + math.cos(math.pi * (round_idx - 1) / max(1, max_rounds)))
+
     optimizer = torch.optim.AdamW(
         local_model.parameters(),
-        lr=lr,
+        lr=round_lr,
         betas=(0.9, 0.999),
         eps=1e-8,
         weight_decay=1e-4,
     )
-    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=max_rounds, eta_min=1e-6)
     loss_fn = SoftDiceCrossEntropyLoss(eps_d=1e-5)
     augmenter = PairwiseAugmentation(modalities=allowed_modalities, is_training=True)
 
     samples = slice_sampler.get_epoch_samples(seed=seed + round_idx, is_training=True)
-    total_batches = (len(samples) + batch_size - 1) // batch_size
+    if dry_run:
+        samples = samples[:batch_size]
 
+    total_batches = (len(samples) + batch_size - 1) // batch_size
     vol_cache: Dict[str, Dict] = {}
     total_loss = 0.0
-    steps = 0
+    valid_batches = 0
 
     for ep in range(local_epochs):
         for b_idx in range(total_batches):
             batch_samples = samples[b_idx * batch_size : (b_idx + 1) * batch_size]
-            B = len(batch_samples)
 
-            batch_inputs = {}
-            for m in ALL_MODALITIES:
-                if m in allowed_modalities:
-                    m_list = []
-                    for pid, s_idx in batch_samples:
-                        if pid not in vol_cache:
-                            vol_cache[pid] = dataset.load_patient_volume(pid)
-                        m_list.append(torch.from_numpy(vol_cache[pid]["modalities"][m][s_idx]).unsqueeze(0).float())
-                    batch_inputs[m] = torch.stack(m_list, dim=0).to(device)
-                else:
-                    # Strict Zero-Filling for missing/unshared modalities
-                    batch_inputs[m] = torch.zeros((B, 1, 240, 240), dtype=torch.float32, device=device)
+            mod_slices = {m: [] for m in allowed_modalities}
+            lbl_slices = []
 
-            lbl_list = []
             for pid, s_idx in batch_samples:
                 if pid not in vol_cache:
                     vol_cache[pid] = dataset.load_patient_volume(pid)
-                lbl_list.append(torch.from_numpy(vol_cache[pid]["labels"][s_idx]).long())
-            y_batch = torch.stack(lbl_list, dim=0).to(device)
+                vol = vol_cache[pid]
 
-            # Apply spatial augmentations on available modalities
-            aug_dict = {m: batch_inputs[m] for m in allowed_modalities}
-            aug_dict["label"] = y_batch
-            aug_out = augmenter(aug_dict)
+                # Filter out degenerate empty slices outside skull (0 brain voxels)
+                nonzero_voxels = sum(np.count_nonzero(vol["modalities"][m][s_idx]) for m in allowed_modalities if m in vol["modalities"])
+                if nonzero_voxels == 0:
+                    continue
 
-            for m in allowed_modalities:
-                batch_inputs[m] = aug_out[m]
-            y_batch = aug_out["label"]
+                lbl_slices.append(torch.from_numpy(vol["labels"][s_idx]).long())
+                for m in allowed_modalities:
+                    mod_slices[m].append(torch.from_numpy(vol["modalities"][m][s_idx]).unsqueeze(0).float())
+
+            if not lbl_slices:
+                continue
+
+            y_b = torch.stack(lbl_slices).to(device)
+            x_avail = {m: torch.stack(mod_slices[m]).to(device) for m in allowed_modalities}
+
+            # Batch-native GPU spatial and intensity augmentation
+            x_avail, y_b = augmenter.augment_batch(x_avail, y_b)
+
+            # Assemble full batch_inputs with zero-filling for unowned/unshared modalities
+            ref_tensor = x_avail[allowed_modalities[0]]
+            B = ref_tensor.shape[0]
+            batch_inputs = {}
+            for m in ALL_MODALITIES:
+                if m in allowed_modalities:
+                    batch_inputs[m] = x_avail[m]
+                else:
+                    batch_inputs[m] = torch.zeros((B, 1, 240, 240), dtype=torch.float32, device=device)
 
             optimizer.zero_grad()
             logits = local_model(batch_inputs)
-            loss = loss_fn(logits, y_batch)
+            loss = loss_fn(logits, y_b)
 
+            # Numerical stability guard
             if not torch.isfinite(loss):
                 print(f"Warning: Non-finite loss detected at client {client_id}, round {round_idx}, batch {b_idx}. Skipping.", flush=True)
+                optimizer.zero_grad()
                 continue
 
             loss.backward()
+
+            # Gradient health guard: verify finite gradients before optimizer step
+            has_nan_grad = any(p.grad is not None and not torch.isfinite(p.grad).all() for p in local_model.parameters())
+            if has_nan_grad:
+                print(f"Warning: Non-finite gradients at client {client_id}, round {round_idx}, batch {b_idx}. Skipping.", flush=True)
+                optimizer.zero_grad()
+                continue
+
             torch.nn.utils.clip_grad_norm_(local_model.parameters(), max_norm=1.0)
             optimizer.step()
 
             total_loss += loss.item()
-            steps += 1
+            valid_batches += 1
 
-    scheduler.step()
-    avg_loss = total_loss / max(steps, 1)
+    avg_loss = total_loss / max(valid_batches, 1)
 
     # Return state_dict on CPU to save GPU VRAM
     local_state = {k: v.cpu().clone() for k, v in local_model.state_dict().items()}
@@ -277,6 +298,11 @@ def aggregate_fedavg(
     """
     Patient-weighted parameter averaging: theta_global = sum_k (w_k * theta_k).
     """
+    for c_id, state in client_states.items():
+        for k, v in state.items():
+            if torch.is_floating_point(v) and not torch.isfinite(v).all():
+                raise RuntimeError(f"Client {c_id} produced non-finite weights in parameter {k}!")
+
     first_client = next(iter(client_states.keys()))
     aggregated_state = {}
 
@@ -335,8 +361,8 @@ def run_fedavg() -> None:
         val_pids = all_hospital_pids[-n_val:] if n_val > 0 else all_hospital_pids
 
         if args.dry_run:
-            tr_pids = tr_pids[:2]
-            val_pids = val_pids[:2]
+            tr_pids = tr_pids[:1]
+            val_pids = val_pids[:1]
 
         client_train_pids[hid] = tr_pids
         client_val_pids[hid] = val_pids
@@ -403,6 +429,7 @@ def run_fedavg() -> None:
                 round_idx=r_idx,
                 max_rounds=max_rounds,
                 local_epochs=args.local_epochs,
+                dry_run=args.dry_run,
             )
             client_updates[hid] = local_state
             client_losses[hid] = c_loss
