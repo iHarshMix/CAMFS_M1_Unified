@@ -30,15 +30,24 @@ echo "=== Seed: $SEED | GPU: $GPU | Host: $(hostname) | Date: $(date) ==="
 echo "============================================================================="
 nvidia-smi
 
-# Activate conda environment
-source /home/shared/miniconda/etc/profile.d/conda.sh
-conda activate camfs
+# Resolve camfs python environment
+if [ -f "/home/harshyadav/miniconda3/envs/camfs/bin/python" ]; then
+    PYTHON_BIN="/home/harshyadav/miniconda3/envs/camfs/bin/python"
+elif [ -f "/home/harshyadav/.conda/envs/camfs/bin/python" ]; then
+    PYTHON_BIN="/home/harshyadav/.conda/envs/camfs/bin/python"
+else
+    source /home/shared/miniconda/etc/profile.d/conda.sh 2>/dev/null || true
+    conda activate camfs 2>/dev/null || true
+    PYTHON_BIN="python"
+fi
+
+echo "Using Python: $($PYTHON_BIN --version 2>&1) at $PYTHON_BIN"
 
 # -----------------------------------------------------------------------------
 # 1. Full-4 Modalities (Ceiling for H1)
 # -----------------------------------------------------------------------------
 echo -e "\n\n>>> [1/3] Launching Centralized Oracle: full4 (T1, T1ce, T2, FLAIR) <<<"
-python scripts/run5_centralized/run_centralized.py \
+$PYTHON_BIN -u scripts/run5_centralized/run_centralized.py \
   --modality-config full4 \
   --partition-seed 1103 \
   --train-seed $SEED \
@@ -51,7 +60,7 @@ python scripts/run5_centralized/run_centralized.py \
 # 2. 3-Modality Subset (Ceiling for H2 and H4)
 # -----------------------------------------------------------------------------
 echo -e "\n\n>>> [2/3] Launching Centralized Oracle: 3mod_a (T1, T1ce, T2) <<<"
-python scripts/run5_centralized/run_centralized.py \
+$PYTHON_BIN -u scripts/run5_centralized/run_centralized.py \
   --modality-config 3mod_a \
   --partition-seed 1103 \
   --train-seed $SEED \
@@ -64,7 +73,7 @@ python scripts/run5_centralized/run_centralized.py \
 # 3. 2-Modality Subset (Ceiling for H3)
 # -----------------------------------------------------------------------------
 echo -e "\n\n>>> [3/3] Launching Centralized Oracle: 2mod (T1, FLAIR) <<<"
-python scripts/run5_centralized/run_centralized.py \
+$PYTHON_BIN -u scripts/run5_centralized/run_centralized.py \
   --modality-config 2mod \
   --partition-seed 1103 \
   --train-seed $SEED \
@@ -72,6 +81,7 @@ python scripts/run5_centralized/run_centralized.py \
   --eval-batch-size 32 \
   --gpu $GPU \
   2>&1 | tee outputs/logs/oracle_2mod_stdout.log
+
 
 echo -e "\n\n============================================================================="
 echo "=== ALL 3 CENTRALIZED CEILING CONFIGURATIONS COMPLETED SUCCESSFULLY! ==="
