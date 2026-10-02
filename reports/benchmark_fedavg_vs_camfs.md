@@ -1,20 +1,27 @@
-# Benchmark Comparison: RUN-3 FedAvg vs. CAMFS-M1 Primary vs. RUN-2 Local-Only
+# Benchmark Comparison: RUN-2 Local-Only vs. RUN-3 FedAvg vs. CAMFS-M1 Primary vs. RUN-5 Centralized Oracle
 
-**Date:** 2026-10-01  
+**Date:** 2026-10-02  
 **Dataset:** BraTS 2020 (Partition 1103, Training Seed 17)  
 **Evaluation Protocol:** Strictly Unified Universal 50 Pure Held-Out Test Patients (`outputs/partitions/h3_test_patients.json`)  
 **Evaluator:** `src/metrics.py::PatientEvaluator` (stacked 155 slices $\to$ 3D volume)
 
 ---
 
-## 1. Executive Summary of Results
+## 1. Executive Summary of Results (The 4-Tier Benchmark Hierarchy)
 
-| Method | H1 Dice | H2 Dice | H3 Dice | H4 Dice | Overall Macro Dice | Median HD95 (Boundary) |
-|---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **RUN-2: Local-Only** | 81.11% | 76.60% | 60.60% | 73.25% | **72.89%** | 4.55 mm |
-| **RUN-3: FedAvg Baseline** | 81.78% | 79.11% | 49.51% | 79.11% | **72.38%** | 22.50 mm |
-| **CAMFS-M1 Primary (Ours)** | **81.43%** | **78.45%** | **65.44%** | **81.07%** | **76.60%** | **3.50 mm** |
-| **CAMFS Gain over FedAvg** | -0.35% | -0.66% | **+15.93%** | **+1.96%** | **+4.22%** | **-19.00 mm (6.4× sharper)** |
+| Method | H1 Dice | H2 Dice | H3 Dice | H4 Dice | Overall Macro Dice | Median HD95 (Boundary) | Consent Violations ($V$) |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|
+| **RUN-2: Local-Only Baseline** | 81.11% | 76.60% | 60.60% | 73.25% | **72.89%** | 4.55 mm | — |
+| **RUN-3: FedAvg Baseline** | 81.78% | 79.11% | 49.51% | 79.11% | **72.38%** | 22.50 mm | $>0$ (uncompliant) |
+| **CAMFS-M1 Primary (Ours)** | **81.43%** | **78.45%** | **65.44%** | **81.07%** | **76.60%** | **3.50 mm** | **$0$ (strict)** |
+| **RUN-5: Centralized Ceiling (Oracle)** | **82.22%** | **80.92%** | **66.44%** | **80.92%** | **77.63%** | **3.34 mm** | — (no privacy) |
+| **CAMFS Retained Efficiency (% of Oracle)** | **99.0%** | **96.9%** | **98.5%** | **100.2%** | **98.7%** | — | — |
+
+> **Key Takeaways:**
+> 1. **CAMFS captures 98.7% of the non-private Centralized Ceiling** while strictly guaranteeing zero data leakage and $V=0$ consent compliance across all hospital tracks.
+> 2. **Naive FedAvg causes negative transfer**, dragging Hospital $H_3$ down to $49.51\%$ and performing worse overall than local training alone ($72.38\%$ vs $72.89\%$).
+> 3. **CAMFS achieves sub-centimeter boundary precision** ($3.50\text{ mm}$ median HD95 vs. $22.50\text{ mm}$ in FedAvg, a $6.4\times$ reduction in contour error).
+
 
 ---
 
